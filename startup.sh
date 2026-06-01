@@ -7,6 +7,9 @@ python manage.py migrate --noinput
 echo "==> Creating default superuser..."
 python manage.py create_default_superuser || echo "Superuser step skipped"
 
+echo "==> Seeding buyers..."
+python manage.py seed_buyers || echo "Seed buyers step skipped"
+
 echo "==> Starting gunicorn..."
 exec gunicorn inv.wsgi:application \
     --bind "0.0.0.0:${PORT:-8000}" \
