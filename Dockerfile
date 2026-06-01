@@ -19,12 +19,9 @@ COPY . .
 # Collect static files at build time
 RUN python manage.py collectstatic --noinput
 
+# Make startup script executable
+RUN chmod +x startup.sh
+
 EXPOSE 8000
 
-# Use $PORT so Railway can override it
-CMD gunicorn inv.wsgi:application \
-    --bind "0.0.0.0:${PORT}" \
-    --workers 2 \
-    --timeout 120 \
-    --access-logfile - \
-    --error-logfile -
+CMD ["./startup.sh"]
