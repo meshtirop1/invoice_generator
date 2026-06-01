@@ -12,18 +12,20 @@ SECRET_KEY = os.environ.get(
 
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-# Accept all hosts by default — Railway's proxy handles external security
 _raw_hosts = os.environ.get('ALLOWED_HOSTS', '*')
 ALLOWED_HOSTS = [h.strip() for h in _raw_hosts.split(',') if h.strip()]
-# Also auto-add Railway's injected domain
-_railway_domain = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
-if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(_railway_domain)
+
+# PythonAnywhere — auto-allow *.pythonanywhere.com
+_pa_username = os.environ.get('PYTHONANYWHERE_USERNAME', '')
+if _pa_username:
+    _pa_domain = f'{_pa_username}.pythonanywhere.com'
+    if _pa_domain not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_pa_domain)
 
 _csrf_origins = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(',') if o.strip()]
-if _railway_domain:
-    CSRF_TRUSTED_ORIGINS.append(f'https://{_railway_domain}')
+if _pa_username:
+    CSRF_TRUSTED_ORIGINS.append(f'https://{_pa_username}.pythonanywhere.com')
 
 # ── Apps ────────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
