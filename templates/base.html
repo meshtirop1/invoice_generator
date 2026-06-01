@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- PWA -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="계산서">
+<link rel="apple-touch-icon" href="/icons/icon-192.svg">
+
+<!-- SEO / Social -->
+<meta name="description" content="거래처 계산서 관리 시스템">
+<meta name="robots" content="noindex">
+
+<title>{% block title %}계산서 시스템{% endblock %}</title>
+
+<style>
+/* ── Reset & Tokens ─────────────────────────────────────────── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --black:   #111111;
+  --dark:    #1e1e1e;
+  --mid:     #555555;
+  --muted:   #888888;
+  --border:  #e2e2e2;
+  --bg:      #f5f5f5;
+  --white:   #ffffff;
+  --red:     #c0392b;
+  --green:   #27ae60;
+  --radius:  4px;
+  --shadow:  0 1px 4px rgba(0,0,0,.08);
+}
+
+body {
+  font-family: 'Malgun Gothic', Arial, 'Apple SD Gothic Neo', sans-serif;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--black);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Top Nav ────────────────────────────────────────────────── */
+.nav {
+  background: var(--black);
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  margin-right: 32px;
+  flex-shrink: 0;
+}
+
+.nav-brand-icon {
+  width: 28px;
+  height: 28px;
+  background: var(--white);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nav-brand-icon svg { width: 18px; height: 18px; }
+
+.nav-brand-text {
+  color: var(--white);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 3px;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1;
+}
+
+.nav-link {
+  color: #999;
+  text-decoration: none;
+  font-size: 13px;
+  padding: 0 14px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  letter-spacing: .5px;
+  transition: color .15s, background .15s;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.nav-link svg { width: 15px; height: 15px; opacity: .7; flex-shrink: 0; }
+.nav-link:hover { color: var(--white); background: rgba(255,255,255,.06); }
+.nav-link.active { color: var(--white); border-bottom-color: var(--white); }
+
+/* ── Install Banner ─────────────────────────────────────────── */
+#install-banner {
+  display: none;
+  background: var(--dark);
+  color: var(--white);
+  padding: 10px 24px;
+  font-size: 13px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+#install-banner.show { display: flex; }
+#install-banner button {
+  background: var(--white);
+  color: var(--black);
+  border: none;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 1px;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+#install-dismiss {
+  background: transparent !important;
+  color: #888 !important;
+  border: 1px solid #555 !important;
+}
+
+/* ── Layout ─────────────────────────────────────────────────── */
+.container {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 28px 20px;
+}
+
+/* ── Card ───────────────────────────────────────────────────── */
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+
+/* ── Page header ─────────────────────────────────────────────── */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--black);
+}
+.page-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 3px;
+}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: .5px;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  border-radius: var(--radius);
+  transition: background .15s, opacity .15s;
+  white-space: nowrap;
+}
+.btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.btn-black  { background: var(--black); color: var(--white); }
+.btn-black:hover { background: var(--dark); }
+.btn-outline { background: transparent; color: var(--black); border: 1.5px solid var(--black); }
+.btn-outline:hover { background: var(--black); color: var(--white); }
+.btn-danger { background: var(--red); color: var(--white); }
+.btn-danger:hover { opacity: .85; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+
+/* ── Forms ──────────────────────────────────────────────────── */
+.form-group { margin-bottom: 16px; }
+.form-group label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--mid);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1.5px solid var(--border);
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--white);
+  color: var(--black);
+  outline: none;
+  border-radius: var(--radius);
+  transition: border-color .15s;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus { border-color: var(--black); }
+
+.form-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+/* ── Tables ─────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; }
+th {
+  background: var(--black);
+  color: var(--white);
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-align: center;
+}
+td {
+  border: 1px solid var(--border);
+  padding: 9px 12px;
+  font-size: 13px;
+}
+tbody tr:hover td { background: #fafafa; }
+
+/* ── Messages ───────────────────────────────────────────────── */
+.messages { list-style: none; margin-bottom: 16px; }
+.messages li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  margin-bottom: 6px;
+  border-radius: var(--radius);
+}
+.messages .success { background: #e8f5e9; color: #2e7d32; border-left: 3px solid var(--green); }
+.messages .error   { background: #ffebee; color: #c62828; border-left: 3px solid var(--red); }
+
+/* ── Badge ──────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 20px;
+  letter-spacing: .5px;
+}
+.badge-dark { background: var(--black); color: var(--white); }
+.badge-muted { background: var(--border); color: var(--mid); }
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .nav-brand-text { display: none; }
+  .form-row, .form-row-3 { grid-template-columns: 1fr; }
+  .container { padding: 16px 12px; }
+  .card { padding: 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Install Banner -->
+<div id="install-banner">
+  <span>📲 홈 화면에 추가하면 앱처럼 사용할 수 있습니다</span>
+  <div style="display:flex;gap:8px;">
+    <button id="install-btn">설치</button>
+    <button id="install-dismiss">닫기</button>
+  </div>
+</div>
+
+<!-- Nav -->
+<nav class="nav">
+  <a href="{% url 'dashboard' %}" class="nav-brand">
+    <span class="nav-brand-icon">
+      <svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="1" width="14" height="16" rx="2" fill="#111"/>
+        <rect x="5" y="5" width="8" height="1.5" rx=".5" fill="#fff"/>
+        <rect x="5" y="8" width="8" height="1.5" rx=".5" fill="#fff"/>
+        <rect x="5" y="11" width="5" height="1.5" rx=".5" fill="#fff"/>
+        <rect x="5" y="13.5" width="8" height="2" rx=".5" fill="#fff"/>
+      </svg>
+    </span>
+    <span class="nav-brand-text">계 산 서</span>
+  </a>
+
+  <div class="nav-links">
+    <a href="{% url 'dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+      <!-- Home icon -->
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1L1 7h2v7h4v-4h2v4h4V7h2L8 1z"/></svg>
+      홈
+    </a>
+    <a href="{% url 'invoice_new' %}" class="nav-link {% if request.resolver_match.url_name == 'invoice_new' %}active{% endif %}">
+      <!-- Plus-doc icon -->
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M9 1H3a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V7l-5-6zm-1 7H6v1.5H5V8H3.5V7H5V5.5h1V7h2v1zm2-6.5L12.5 4H10V1.5z"/></svg>
+      새 계산서
+    </a>
+    <a href="{% url 'invoice_list' %}" class="nav-link {% if request.resolver_match.url_name == 'invoice_list' %}active{% endif %}">
+      <!-- List icon -->
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v1.5H2V4zm0 3.5h12V9H2V7.5zm0 3.5h8v1.5H2V11z"/></svg>
+      계산서 목록
+    </a>
+    <a href="{% url 'buyer_list' %}" class="nav-link {% if request.resolver_match.url_name == 'buyer_list' %}active{% endif %}">
+      <!-- People icon -->
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 6a5 5 0 0110 0H3z"/></svg>
+      거래처
+    </a>
+    <a href="{% url 'settings' %}" class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+      <!-- Gear icon -->
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 5a3 3 0 100 6A3 3 0 008 5zm6.3 1.7l-1-.2a5.3 5.3 0 00-.4-1l.6-.8-1.4-1.4-.8.6a5.3 5.3 0 00-1-.4l-.2-1H7l-.2 1a5.3 5.3 0 00-1 .4l-.8-.6-1.4 1.4.6.8a5.3 5.3 0 00-.4 1l-1 .2v2l1 .2c.1.35.24.68.4 1l-.6.8 1.4 1.4.8-.6c.32.16.65.3 1 .4l.2 1h2l.2-1a5.3 5.3 0 001-.4l.8.6 1.4-1.4-.6-.8c.16-.32.3-.65.4-1l1-.2v-2z"/></svg>
+      설정
+    </a>
+  </div>
+</nav>
+
+<!-- Main content -->
+<div class="container">
+  {% if messages %}
+  <ul class="messages">
+    {% for message in messages %}
+    <li class="{{ message.tags }}">
+      {% if message.tags == 'success' %}✓{% else %}✕{% endif %}
+      {{ message }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% block content %}{% endblock %}
+</div>
+
+<!-- PWA: Service Worker + Install prompt -->
+<script>
+(function () {
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+
+  // Install prompt
+  let deferredPrompt;
+  const banner = document.getElementById('install-banner');
+  const installBtn = document.getElementById('install-btn');
+  const dismissBtn = document.getElementById('install-dismiss');
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (!sessionStorage.getItem('install-dismissed')) {
+      banner.classList.add('show');
+    }
+  });
+
+  installBtn.addEventListener('click', () => {
+    banner.classList.remove('show');
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(() => { deferredPrompt = null; });
+  });
+
+  dismissBtn.addEventListener('click', () => {
+    banner.classList.remove('show');
+    sessionStorage.setItem('install-dismissed', '1');
+  });
+})();
+</script>
+</body>
+</html>

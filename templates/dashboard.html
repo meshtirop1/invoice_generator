@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}대시보드{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>대 시 보 드</h1>
+  <a href="{% url 'invoice_new' %}" class="btn btn-black">+ 새 계산서</a>
+</div>
+
+<!-- Quick Action Cards -->
+<div class="form-row-3" style="margin-bottom:24px;">
+
+  <a href="{% url 'invoice_new' %}" style="text-decoration:none;">
+    <div class="card" style="margin-bottom:0;text-align:center;padding:24px;border:2px solid #111;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='#111';this.style.color='#fff'" onmouseout="this.style.background='#fff';this.style.color='#111'">
+      <div style="font-size:28px;margin-bottom:8px;">📄</div>
+      <div style="font-size:13px;letter-spacing:2px;font-weight:600;">새 계산서</div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">New Invoice</div>
+    </div>
+  </a>
+
+  <a href="{% url 'buyer_list' %}" style="text-decoration:none;">
+    <div class="card" style="margin-bottom:0;text-align:center;padding:24px;border:1px solid #ddd;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='#111';this.style.color='#fff'" onmouseout="this.style.background='#fff';this.style.color='#111'">
+      <div style="font-size:28px;margin-bottom:8px;">🏪</div>
+      <div style="font-size:13px;letter-spacing:2px;font-weight:600;">거래처 관리</div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">Manage Buyers</div>
+    </div>
+  </a>
+
+  <a href="{% url 'settings' %}" style="text-decoration:none;">
+    <div class="card" style="margin-bottom:0;text-align:center;padding:24px;border:1px solid #ddd;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='#111';this.style.color='#fff'" onmouseout="this.style.background='#fff';this.style.color='#111'">
+      <div style="font-size:28px;margin-bottom:8px;">⚙️</div>
+      <div style="font-size:13px;letter-spacing:2px;font-weight:600;">판매자 설정</div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">Seller Settings</div>
+    </div>
+  </a>
+
+</div>
+
+<!-- Setup guide if no buyers yet -->
+{% if not buyers %}
+<div class="card" style="border-left:4px solid #111;margin-bottom:24px;">
+  <div style="font-size:13px;font-weight:600;margin-bottom:12px;letter-spacing:1px;">⚠️ 시작 전 설정이 필요합니다</div>
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="background:#111;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">1</span>
+      <span style="font-size:13px;">판매자 정보 추가 →</span>
+      <a href="{% url 'seller_new' %}" class="btn btn-black btn-sm">설정으로 이동</a>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="background:#111;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">2</span>
+      <span style="font-size:13px;">거래처 추가 →</span>
+      <a href="{% url 'buyer_new' %}" class="btn btn-black btn-sm">거래처 추가</a>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="background:#aaa;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">3</span>
+      <span style="font-size:13px;color:#aaa;">계산서 작성 (설정 후 가능)</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="form-row" style="margin-bottom:24px;">
+
+  <!-- Buyer shortcuts -->
+  <div class="card" style="margin-bottom:0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="font-size:11px;letter-spacing:2px;color:#888;">거래처 바로가기</div>
+      <a href="{% url 'buyer_new' %}" class="btn btn-outline btn-sm">+ 추가</a>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      {% for buyer in buyers %}
+      <a href="{% url 'invoice_new' %}?buyer={{ buyer.pk }}" class="btn btn-outline btn-sm">{{ buyer.name }}</a>
+      {% empty %}
+      <span style="font-size:13px;color:#aaa;">거래처를 먼저 추가하세요</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Balance overview -->
+  <div class="card" style="margin-bottom:0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="font-size:11px;letter-spacing:2px;color:#888;">잔액 현황</div>
+      <a href="{% url 'invoice_list' %}" class="btn btn-outline btn-sm">전체 보기</a>
+    </div>
+    {% for buyer in buyers %}
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px;">
+      <span>{{ buyer.name }}</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-weight:600;">{{ buyer.get_current_balance|floatformat:0 }} 원</span>
+        <a href="{% url 'invoice_list' %}?buyer={{ buyer.pk }}" class="btn btn-outline btn-sm">내역</a>
+      </div>
+    </div>
+    {% empty %}
+    <span style="font-size:13px;color:#aaa;">거래처가 없습니다</span>
+    {% endfor %}
+  </div>
+
+</div>
+
+<!-- Recent invoices -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <div style="font-size:11px;letter-spacing:2px;color:#888;">최근 계산서</div>
+    <a href="{% url 'invoice_list' %}" class="btn btn-outline btn-sm">전체 보기</a>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>날짜</th>
+        <th>거래처</th>
+        <th>판매자</th>
+        <th>현잔액</th>
+        <th>작업</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in recent_invoices %}
+      <tr>
+        <td style="text-align:center;">{{ inv.date }}</td>
+        <td style="text-align:center;">{{ inv.buyer.name }}</td>
+        <td style="text-align:center;">{{ inv.seller.company_name }}</td>
+        <td style="text-align:right;font-weight:600;">{{ inv.current_balance|floatformat:0 }} 원</td>
+        <td style="text-align:center;">
+          <a href="{% url 'invoice_detail' inv.pk %}" class="btn btn-outline btn-sm">보기</a>
+          <a href="{% url 'invoice_print' inv.pk %}" class="btn btn-black btn-sm" target="_blank">인쇄</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" style="text-align:center;color:#aaa;padding:24px;">계산서가 없습니다</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

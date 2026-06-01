@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}{% if buyer %}거래처 수정{% else %}거래처 추가{% endif %}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{% if buyer %}거 래 처 수 정{% else %}거 래 처 추 가{% endif %}</h1>
+  <a href="{% url 'buyer_list' %}" class="btn btn-outline">← 뒤로</a>
+</div>
+<div class="card" style="max-width:500px;">
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-group">
+      <label>거래처명</label>
+      <input type="text" name="name" value="{{ buyer.name|default:'' }}" required placeholder="예) 유나상회">
+    </div>
+    <div style="display:flex;gap:24px;margin-bottom:18px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
+        <input type="checkbox" name="has_delivery_fee" {% if buyer.has_delivery_fee %}checked{% endif %}> 택배료 있음
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
+        <input type="checkbox" name="has_deduction" {% if buyer.has_deduction %}checked{% endif %}> 공제 있음
+      </label>
+    </div>
+    <div class="form-group">
+      <label>메모</label>
+      <textarea name="notes" rows="3" style="resize:vertical;">{{ buyer.notes|default:'' }}</textarea>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;">
+      <a href="{% url 'buyer_list' %}" class="btn btn-outline">취소</a>
+      <button type="submit" class="btn btn-black">저 장</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

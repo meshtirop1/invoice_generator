@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="64" fill="#111111"/>
+  <!-- Document body -->
+  <rect x="116" y="72" width="280" height="368" rx="16" fill="#ffffff"/>
+  <!-- Header bar -->
+  <rect x="116" y="72" width="280" height="88" rx="16" fill="#111111"/>
+  <rect x="116" y="128" width="280" height="32" fill="#111111"/>
+  <!-- Title in header -->
+  <rect x="156" y="92" width="200" height="16" rx="4" fill="#ffffff"/>
+  <rect x="176" y="116" width="160" height="10" rx="3" fill="#888888"/>
+  <!-- Table header row -->
+  <rect x="116" y="192" width="280" height="28" fill="#f0f0f0"/>
+  <rect x="130" y="200" width="80" height="10" rx="2" fill="#333333"/>
+  <rect x="260" y="200" width="50" height="10" rx="2" fill="#333333"/>
+  <rect x="336" y="200" width="46" height="10" rx="2" fill="#333333"/>
+  <!-- Data rows -->
+  <rect x="130" y="234" width="90" height="8" rx="2" fill="#444444"/>
+  <rect x="260" y="234" width="40" height="8" rx="2" fill="#444444"/>
+  <rect x="336" y="234" width="46" height="8" rx="2" fill="#444444"/>
+
+  <rect x="130" y="258" width="70" height="8" rx="2" fill="#444444"/>
+  <rect x="260" y="258" width="40" height="8" rx="2" fill="#444444"/>
+  <rect x="336" y="258" width="46" height="8" rx="2" fill="#444444"/>
+
+  <rect x="130" y="282" width="100" height="8" rx="2" fill="#444444"/>
+  <rect x="260" y="282" width="40" height="8" rx="2" fill="#444444"/>
+  <rect x="336" y="282" width="46" height="8" rx="2" fill="#444444"/>
+
+  <rect x="130" y="306" width="60" height="8" rx="2" fill="#cccccc"/>
+  <rect x="130" y="326" width="60" height="8" rx="2" fill="#cccccc"/>
+  <!-- Total section -->
+  <rect x="116" y="372" width="280" height="68" rx="0" fill="#111111"/>
+  <rect x="116" y="368" width="280" height="8" fill="#111111"/>
+  <rect x="148" y="388" width="216" height="14" rx="3" fill="#ffffff"/>
+  <rect x="148" y="410" width="140" height="10" rx="3" fill="#888888"/>
+</svg>
