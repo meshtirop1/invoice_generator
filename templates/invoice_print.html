@@ -203,12 +203,20 @@ body {
 .print-controls a:hover { background: #333; }
 
 @media print {
-  html, body {
+  html {
+    height: 297mm;
+    max-height: 297mm;
+    overflow: hidden;
+  }
+  body {
     background: white;
     padding: 0;
     margin: 0;
     width: 210mm;
     height: 297mm;
+    max-height: 297mm;
+    overflow: hidden;
+    display: block;   /* override flexbox — prevents phantom second page */
   }
   .page {
     border: none;
@@ -216,7 +224,7 @@ body {
     width: 210mm;
     height: 297mm;
     max-height: 297mm;
-    overflow: hidden;       /* stops content from bleeding onto page 2 */
+    overflow: hidden;
     page-break-after: avoid;
     page-break-inside: avoid;
   }
