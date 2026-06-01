@@ -4,7 +4,10 @@
 <head>
 <meta charset="UTF-8">
 <style>
-  @page { margin: 12mm 14mm; size: A4; }
+  @page {
+    size: A4;
+    margin: 0;          /* removes browser URL/date headers and footers */
+  }
 </style>
 <title>계산서 - {{ invoice.buyer.name }}</title>
 <style>
@@ -23,10 +26,11 @@ body {
 
 .page {
   width: 210mm;
-  min-height: 297mm;
+  height: 297mm;
   background: #fff;
   border: 1px solid #999;
   padding: 16mm 15mm;
+  overflow: hidden;
 }
 
 .invoice-title {
@@ -199,19 +203,22 @@ body {
 .print-controls a:hover { background: #333; }
 
 @media print {
-  @page {
-    size: A4;
-    margin: 12mm 14mm;
-  }
   html, body {
     background: white;
     padding: 0;
     margin: 0;
+    width: 210mm;
+    height: 297mm;
   }
   .page {
     border: none;
-    padding: 0;
-    width: 100%;
+    padding: 12mm 14mm;
+    width: 210mm;
+    height: 297mm;
+    max-height: 297mm;
+    overflow: hidden;       /* stops content from bleeding onto page 2 */
+    page-break-after: avoid;
+    page-break-inside: avoid;
   }
   .print-controls { display: none; }
 }
