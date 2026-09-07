@@ -1,233 +1,43 @@
-{% load humanize %}
 <!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<style>
-  @page {
-    size: A4;
-    margin: 0;          /* removes browser URL/date headers and footers */
-  }
-</style>
 <title>계산서 - {{ invoice.buyer.name }}</title>
+<meta name="robots" content="noindex">
+<style>
+  @page { size: A4; margin: 0; }
+</style>
+{% include "_paper_css.html" %}
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-
 body {
   background: #e8e8e8;
   display: flex;
   justify-content: center;
   padding: 30px;
-  font-family: Arial, 'Malgun Gothic', sans-serif;
-  font-weight: 700;
+  font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-
-.page {
-  width: 210mm;
-  height: 297mm;
-  background: #fff;
-  border: 1px solid #999;
-  padding: 16mm 15mm;
-  overflow: hidden;
-}
-
-.invoice-title {
-  text-align: center;
-  font-size: 30px;
-  font-weight: 900;
-  letter-spacing: 12px;
-  border-bottom: 3px solid #000;
-  padding-bottom: 10px;
-  margin-bottom: 14px;
-}
-
-.header-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin-bottom: 14px;
-  gap: 0;
-}
-
-.header-left {
-  padding-right: 16px;
-  border-right: 2px solid #000;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.header-right {
-  padding-left: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.buyer-row {
-  font-size: 18px;
-  font-weight: 900;
-  letter-spacing: 2px;
-  border-bottom: 2px solid #000;
-  padding-bottom: 6px;
-}
-
-.date-row {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  border-bottom: 2px solid #000;
-  padding-bottom: 6px;
-  display: inline-block;
-}
-
-.seller-name {
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: 2px;
-}
-
-.seller-info {
-  font-size: 13px;
-  font-weight: 700;
-  color: #000;
-  line-height: 2;
-}
-
-.items-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  font-weight: 700;
-  table-layout: fixed;
-}
-
-.items-table th {
-  background: #1a1a1a;
-  color: #fff;
-  padding: 8px 4px;
-  text-align: center;
-  font-weight: 800;
-  font-size: 13px;
-  letter-spacing: 2px;
-  border: 1.5px solid #000;
-}
-
-.items-table td {
-  border: 1.5px solid #000;
-  padding: 7px 6px;
-  text-align: center;
-  height: 28px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.items-table td.name { text-align: left; padding-left: 10px; }
-.items-table td.num { text-align: right; padding-right: 8px; }
-.items-table td.amount { text-align: right; padding-right: 10px; font-weight: 800; }
-
-.summary-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.summary-table td {
-  border: 1.5px solid #000;
-  padding: 8px 12px;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.summary-table .label {
-  text-align: center;
-  letter-spacing: 4px;
-  font-weight: 800;
-  background: #e8e8e8;
-  width: 160px;
-}
-
-.summary-table .value {
-  text-align: right;
-  font-weight: 700;
-  font-size: 14px;
-  padding-right: 16px;
-}
-
-.summary-table .value.total {
-  font-size: 17px;
-  font-weight: 900;
-}
-
-.bank-footer {
-  margin-top: 16px;
-  border: 2.5px solid #000;
-  padding: 12px 20px;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 2px;
-}
-
-.fax-line {
-  text-align: center;
-  font-size: 12px;
-  font-weight: 700;
-  color: #000;
-  margin-top: 6px;
-  letter-spacing: 1px;
-}
+.page { border: 1px solid #999; }
 
 .print-controls {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  display: flex;
-  gap: 8px;
+  position: fixed; top: 20px; right: 20px; display: flex; gap: 8px;
 }
-
 .print-controls button, .print-controls a {
-  background: #000;
-  color: #fff;
-  border: none;
-  padding: 10px 20px;
-  font-size: 13px;
-  font-family: Arial, 'Malgun Gothic', sans-serif;
-  cursor: pointer;
-  letter-spacing: 1px;
-  text-decoration: none;
-  display: inline-block;
+  background: #000; color: #fff; border: none; padding: 10px 20px;
+  font-size: 13px; font-family: inherit; font-weight: 700;
+  cursor: pointer; letter-spacing: 1px; text-decoration: none;
+  display: inline-block; border-radius: 4px;
 }
-
 .print-controls a { background: #555; }
 .print-controls a:hover { background: #333; }
 
 @media print {
-  html {
-    height: 297mm;
-    max-height: 297mm;
-    overflow: hidden;
-  }
-  body {
-    background: white;
-    padding: 0;
-    margin: 0;
-    width: 210mm;
-    height: 297mm;
-    max-height: 297mm;
-    overflow: hidden;
-    display: block;   /* override flexbox — prevents phantom second page */
-  }
-  .page {
-    border: none;
-    padding: 12mm 14mm;
-    width: 210mm;
-    height: 297mm;
-    max-height: 297mm;
-    overflow: hidden;
-    page-break-after: avoid;
-    page-break-inside: avoid;
-  }
+  body { background: #fff; padding: 0; margin: 0; display: block; }
+  .page { border: none; }
+  .grid tr { page-break-inside: avoid; }
+  .grid thead { display: table-header-group; }
   .print-controls { display: none; }
 }
 </style>
@@ -235,92 +45,11 @@ body {
 <body>
 
 <div class="print-controls">
-  <a href="{% url 'invoice_detail' invoice.pk %}">← 뒤로</a>
+  <a href="{% url 'invoice_edit' invoice.pk %}">← 수정</a>
   <button onclick="window.print()">🖨 인쇄</button>
 </div>
 
-<div class="page">
+{% include "_paper.html" %}
 
-  <div class="invoice-title">계 산 서</div>
-
-  <div class="header-grid">
-    <div class="header-left">
-      <div class="buyer-row">{{ invoice.buyer.name }} &nbsp; 귀 하</div>
-      <div class="date-row">
-        {{ invoice.date.year }}년 &nbsp;
-        {{ invoice.date.month }}월 &nbsp;
-        {{ invoice.date.day }}일
-      </div>
-    </div>
-    <div class="header-right">
-      <div class="seller-name">{{ invoice.seller.company_name }}</div>
-      <div class="seller-info">
-        주소 : {{ invoice.seller.address }}<br>
-        전화번호(사무실) : {{ invoice.seller.phone }}
-      </div>
-    </div>
-  </div>
-
-  <table class="items-table">
-    <thead>
-      <tr>
-        <th style="width:30%">품 명</th>
-        <th style="width:14%">수 량</th>
-        <th style="width:14%">박 스</th>
-        <th style="width:20%">단 가</th>
-        <th style="width:22%">금 액</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in items %}
-      <tr>
-        <td class="name">{{ item.product_name }}</td>
-        <td class="num">{{ item.quantity|floatformat:0|intcomma }}</td>
-        <td class="num">{{ item.boxes|floatformat:0|intcomma }}</td>
-        <td class="num">{{ item.unit_price|floatformat:0|intcomma }}</td>
-        <td class="amount">{{ item.amount|floatformat:0|intcomma }}</td>
-      </tr>
-      {% endfor %}
-      {% for _ in empty_rows %}
-      <tr>
-        <td class="name"></td><td></td><td></td><td></td><td></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <table class="summary-table">
-    {% if invoice.buyer.has_delivery_fee %}
-    <tr>
-      <td class="label">택 배 료</td>
-      <td class="value">{% if invoice.delivery_fee %}{{ invoice.delivery_fee|floatformat:0|intcomma }}{% endif %}</td>
-    </tr>
-    {% endif %}
-    {% if invoice.buyer.has_deduction %}
-    <tr>
-      <td class="label">공 &nbsp;&nbsp;&nbsp; 제</td>
-      <td class="value">{% if invoice.deduction %}{{ invoice.deduction|floatformat:0|intcomma }}{% endif %}</td>
-    </tr>
-    {% endif %}
-    <tr>
-      <td class="label">입 &nbsp;&nbsp;&nbsp; 금</td>
-      <td class="value">{% if invoice.payment_received %}{{ invoice.payment_received|floatformat:0|intcomma }}{% endif %}</td>
-    </tr>
-    <tr>
-      <td class="label">전 잔 액</td>
-      <td class="value">{% if invoice.previous_balance %}{{ invoice.previous_balance|floatformat:0|intcomma }}{% endif %}</td>
-    </tr>
-    <tr>
-      <td class="label">현 잔 액</td>
-      <td class="value total">{{ invoice.current_balance|floatformat:0|intcomma }}</td>
-    </tr>
-  </table>
-
-  <div class="bank-footer">{{ invoice.seller.bank_account }}</div>
-  {% if invoice.seller.fax %}
-  <div class="fax-line">FAX {{ invoice.seller.fax }}</div>
-  {% endif %}
-
-</div>
 </body>
 </html>

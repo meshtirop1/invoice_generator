@@ -1,0 +1,621 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% if is_saved %}계산서 수정{% else %}새 계산서{% endif %} — {{ selected_buyer.name|default:"계산서" }}</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="계산서">
+<link rel="icon" href="/icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="icon" href="/icons/icon-512.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="robots" content="noindex">
+
+<style>
+  @page { size: A4; margin: 0; }
+</style>
+
+{% include "_paper_css.html" %}
+
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* A class that sets `display` outranks the UA's [hidden] rule, so make the
+   attribute win everywhere — .seller-line is display:flex. */
+[hidden] { display: none !important; }
+
+body {
+  background: #e8e8e8;
+  font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif;
+  padding: 84px 20px 60px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.page { margin: 0 auto; border: 1px solid #999; box-shadow: 0 4px 20px rgba(0,0,0,.15); }
+
+/* ── Toolbar ─────────────────────────────────────────────── */
+.toolbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 60px;
+  background: #111;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 18px;
+  z-index: 500;
+  box-shadow: 0 2px 10px rgba(0,0,0,.35);
+}
+.toolbar .spacer { flex: 1; }
+.tb-btn {
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #444;
+  padding: 9px 16px;
+  font-size: 13.5px;
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.tb-btn:hover { background: #3a3a3a; }
+.tb-btn.primary { background: #fff; color: #111; border-color: #fff; }
+.tb-btn.primary:hover { background: #ddd; }
+.tb-btn.accent { background: #1a7f37; border-color: #1a7f37; }
+.tb-btn.accent:hover { background: #22993f; }
+.tb-btn.danger { background: transparent; border-color: #7a2b23; color: #e5837a; }
+.tb-btn.danger:hover { background: #7a2b23; color: #fff; }
+.tb-btn[disabled] { opacity: .4; cursor: not-allowed; }
+.hint { color: #999; font-size: 12px; font-weight: 400; }
+
+/* ── Flash ───────────────────────────────────────────────── */
+.flash-wrap {
+  position: fixed; top: 70px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 600; width: max-content; max-width: 90vw;
+}
+.flash {
+  padding: 11px 22px; font-size: 14px; border-radius: 4px;
+  margin-bottom: 6px; box-shadow: 0 3px 12px rgba(0,0,0,.2); color: #fff;
+}
+.flash.success { background: #1a7f37; }
+.flash.error   { background: #c0392b; }
+
+/* ── Editable fields: ink on screen, ink on paper ────────── */
+.f {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  color: #000;
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  padding: 0;
+  border-radius: 2px;
+  text-align: center;
+}
+.f:hover { background: #eef3ff; }
+.f:focus { background: #d8e6ff; box-shadow: inset 0 0 0 2px #2f6fd0; }
+select.f { appearance: none; cursor: pointer; }
+
+.grid td .f { height: 34px; line-height: 34px; }
+.grid td.sum-value .f { font-weight: 800; }
+
+.seller-line { display: flex; gap: 4px; align-items: baseline; }
+.seller-line .label { flex-shrink: 0; }
+.seller-line .f { text-align: left; flex: 1; min-width: 0; }
+
+/* The paper shows a Korean date; the native picker sits invisibly on top. */
+.date-line { position: relative; }
+.date-line #dateField {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  opacity: 0; border: none; padding: 0; margin: 0;
+  font: inherit; cursor: pointer;
+}
+.date-line:hover { background: #eef3ff; }
+.date-line:focus-within { background: #d8e6ff; box-shadow: inset 0 0 0 2px #2f6fd0; }
+
+/* ── Row bar ─────────────────────────────────────────────── */
+.row-bar {
+  width: 210mm; margin: 10px auto 0;
+  display: flex; gap: 10px; align-items: center;
+}
+.row-bar button {
+  background: #fff; border: 1.5px solid #111; padding: 8px 16px;
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer; border-radius: 4px;
+}
+.row-bar button:hover { background: #111; color: #fff; }
+.row-bar .note { font-size: 12px; color: #666; }
+
+/* ── QR modal ────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  display: none; align-items: center; justify-content: center; z-index: 900;
+}
+.modal-backdrop.show { display: flex; }
+.modal {
+  background: #fff; padding: 30px 38px; border-radius: 8px;
+  text-align: center; max-width: 420px;
+}
+.modal h2 { font-size: 19px; letter-spacing: 3px; margin-bottom: 8px; }
+.modal p { font-size: 13px; color: #555; line-height: 1.7; margin-bottom: 18px; }
+.modal .qr { display: flex; justify-content: center; margin-bottom: 16px; }
+.modal .url { font-size: 11px; color: #888; word-break: break-all; margin-bottom: 16px; }
+.modal .warn {
+  background: #fff4e5; border-left: 3px solid #e08600; padding: 10px 14px;
+  font-size: 12px; color: #7a4a00; text-align: left; margin-bottom: 16px; line-height: 1.6;
+}
+.modal button {
+  background: #111; color: #fff; border: none; padding: 10px 26px;
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer; border-radius: 4px; letter-spacing: 1px;
+}
+
+/* ── Print / export: the paper alone ─────────────────────── */
+@media print {
+  body { background: #fff; padding: 0; margin: 0; }
+  .toolbar, .row-bar, .flash-wrap, .modal-backdrop { display: none !important; }
+  .page { border: none; box-shadow: none; margin: 0; }
+  .f { background: transparent !important; box-shadow: none !important; }
+  .grid tr { page-break-inside: avoid; }
+  .grid thead { display: table-header-group; }
+}
+body.exporting .f { background: transparent !important; box-shadow: none !important; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <a href="{% url 'invoice_list' %}" class="tb-btn">← 목록</a>
+  <button type="submit" form="sheetForm" class="tb-btn primary">💾 저 장</button>
+  <span class="hint" id="dirtyHint"></span>
+  <div class="spacer"></div>
+  <button type="button" class="tb-btn" id="btnPng">🖼 PNG 저장</button>
+  <button type="button" class="tb-btn accent" id="btnPhone">📱 폰으로 보내기</button>
+  <button type="button" class="tb-btn" onclick="window.print()">🖨 인쇄</button>
+  {% if is_saved %}
+  <a href="{% url 'invoice_delete' invoice.pk %}" class="tb-btn danger">삭제</a>
+  {% endif %}
+</div>
+
+{% if messages %}
+<div class="flash-wrap" id="flashWrap">
+  {% for message in messages %}
+  <div class="flash {{ message.tags }}">{{ message }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" id="sheetForm">
+{% csrf_token %}
+
+<div class="page" id="paper">
+
+  <div class="invoice-title">계 산 서</div>
+
+  <div class="head">
+    <div class="head-left">
+      <div class="buyer-line">
+        <select name="buyer" id="buyerSelect" class="f" required>
+          <option value="">거래처 선택</option>
+          {% for buyer in buyers %}
+          <option value="{{ buyer.pk }}"
+            data-delivery="{{ buyer.has_delivery_fee|yesno:'1,0' }}"
+            data-deduction="{{ buyer.has_deduction|yesno:'1,0' }}"
+            {% if selected_buyer and selected_buyer.pk == buyer.pk %}selected{% endif %}>{{ buyer.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="date-line">
+        <span id="dateDisplay"></span>
+        <input type="date" name="date" id="dateField"
+               value="{{ date_value|date:'Y-m-d' }}" required>
+      </div>
+    </div>
+
+    <div class="head-right">
+      <div class="seller-name">
+        <input type="text" name="seller_name" class="f" placeholder="상호명"
+               value="{{ invoice.seller_name }}">
+      </div>
+      <div class="seller-line">
+        <span class="label">주소 :</span>
+        <input type="text" name="seller_address" class="f" placeholder="주소"
+               value="{{ invoice.seller_address }}">
+      </div>
+      <div class="seller-line">
+        <span class="label">전화번호(사무실) :</span>
+        <input type="text" name="seller_phone" class="f" placeholder="000 - 000 - 0000"
+               value="{{ invoice.seller_phone }}">
+      </div>
+      <div class="seller-line" id="faxLine"{% if not invoice.seller_fax %} hidden{% endif %}>
+        <span class="label">FAX :</span>
+        <input type="text" name="seller_fax" class="f" value="{{ invoice.seller_fax }}">
+      </div>
+    </div>
+  </div>
+
+  <table class="grid" id="grid">
+    <thead>
+      <tr>
+        <th style="width:21%">품 명</th>
+        <th style="width:18%">수 량</th>
+        <th style="width:19%">박 스</th>
+        <th style="width:20.5%">단 가</th>
+        <th style="width:21.5%">금 액</th>
+      </tr>
+    </thead>
+    <tbody id="itemsBody">
+      {% for item in items %}
+      <tr class="item-row">
+        <td><input type="text" name="product_name[]" class="f cell"
+                   value="{{ item.product_name }}"></td>
+        <td><input type="text" inputmode="decimal" name="quantity[]" class="f cell qty"
+                   value="{{ item.quantity|floatformat:'-2' }}"></td>
+        <td><input type="text" inputmode="decimal" name="boxes[]" class="f cell boxes"
+                   value="{{ item.boxes|floatformat:'-2' }}"></td>
+        <td><input type="text" inputmode="numeric" name="unit_price[]" class="f cell price"
+                   value="{{ item.unit_price|floatformat:0 }}"></td>
+        <td class="amount">{{ item.amount|floatformat:0|intcomma }}</td>
+      </tr>
+      {% endfor %}
+      {% for _ in blank_rows %}
+      <tr class="item-row">
+        <td><input type="text" name="product_name[]" class="f cell"></td>
+        <td><input type="text" inputmode="decimal" name="quantity[]" class="f cell qty"></td>
+        <td><input type="text" inputmode="decimal" name="boxes[]" class="f cell boxes"></td>
+        <td><input type="text" inputmode="numeric" name="unit_price[]" class="f cell price"></td>
+        <td class="amount"></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tbody id="summaryBody">
+      <tr id="deliveryRow">
+        <td></td><td></td><td></td>
+        <td class="sum-label">택 배 료</td>
+        <td class="sum-value"><input type="text" inputmode="numeric" name="delivery_fee"
+               id="delivery_fee" class="f money"
+               value="{{ invoice.delivery_fee|default:0|floatformat:0 }}"></td>
+      </tr>
+      <tr id="deductionRow">
+        <td></td><td></td><td></td>
+        <td class="sum-label">공 제</td>
+        <td class="sum-value"><input type="text" inputmode="numeric" name="deduction"
+               id="deduction" class="f money"
+               value="{{ invoice.deduction|default:0|floatformat:0 }}"></td>
+      </tr>
+      <tr>
+        <td></td><td></td><td></td>
+        <td class="sum-label">입 금</td>
+        <td class="sum-value"><input type="text" inputmode="numeric" name="payment_received"
+               id="payment_received" class="f money"
+               value="{{ invoice.payment_received|default:0|floatformat:0 }}"></td>
+      </tr>
+      <tr>
+        <td></td><td></td><td></td>
+        <td class="sum-label">전 잔 액</td>
+        <td class="sum-value" id="prevBalanceCell"></td>
+      </tr>
+      <tr class="total-row">
+        <td></td><td></td><td></td>
+        <td class="sum-label">현 잔 액</td>
+        <td class="sum-value" id="currentBalanceCell"></td>
+      </tr>
+      <tr>
+        <td class="bank-row" colspan="5">
+          <input type="text" name="seller_bank_account" class="f"
+                 placeholder="은행 계좌번호 예금주"
+                 value="{{ invoice.seller_bank_account }}"></td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+</form>
+
+<div class="row-bar">
+  <button type="button" id="addRow">+ 줄 추가</button>
+  <button type="button" id="toggleFax">+ FAX</button>
+  <span class="note">Tab = 다음 칸 · Enter = 아래 칸 · 마지막 줄에 입력하면 자동으로 줄이 늘어납니다</span>
+</div>
+
+<div class="modal-backdrop" id="qrModal">
+  <div class="modal">
+    <h2>폰 으 로 보 내 기</h2>
+    <p>휴대폰 카메라로 아래 QR을 비추면<br>계산서 이미지가 바로 열립니다.</p>
+    <div class="warn" id="qrWarn" hidden></div>
+    <div class="qr" id="qrTarget"></div>
+    <div class="url" id="qrUrl"></div>
+    <button type="button" id="qrClose">닫 기</button>
+  </div>
+</div>
+
+<script src="/vendor/html-to-image.js"></script>
+<script src="/vendor/qrcode.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var invoicePk = {% if is_saved %}{{ invoice.pk }}{% else %}null{% endif %};
+  var shareUrl  = {% if is_saved %}'{{ request.scheme }}://{{ request.get_host }}{% url "invoice_share" invoice.pk %}'{% else %}null{% endif %};
+  var buyerSelect = document.getElementById('buyerSelect');
+  var prevBalance = Number('{{ previous_balance|floatformat:0 }}') || 0;
+  var dirty = false;
+
+  function parseNum(v) {
+    var n = parseFloat(String(v == null ? '' : v).replace(/,/g, '').trim());
+    return isNaN(n) ? 0 : n;
+  }
+  function fmt(n) { return Math.round(n).toLocaleString('ko-KR'); }
+
+  // Money reads with separators on the paper, plain while being typed.
+  function showGrouped(input) {
+    var raw = String(input.value).replace(/,/g, '').trim();
+    if (raw === '' || isNaN(Number(raw))) return;
+    // A zero prints as an empty cell on the original sheet, so show nothing.
+    input.value = Number(raw) === 0 ? '' : Number(raw).toLocaleString('ko-KR');
+  }
+  function wireMoney(input) {
+    input.addEventListener('focus', function () {
+      input.value = String(input.value).replace(/,/g, '');
+      input.select();
+    });
+    input.addEventListener('blur', function () { showGrouped(input); });
+    showGrouped(input);
+  }
+
+  function renderDate() {
+    var parts = String(document.getElementById('dateField').value || '').split('-');
+    document.getElementById('dateDisplay').textContent =
+      parts.length === 3 ? parts[0] + '년 ' + parts[1] + '월 ' + parts[2] + '일' : '';
+  }
+
+  function recalc() {
+    var total = 0;
+    document.querySelectorAll('.item-row').forEach(function (row) {
+      var amt = parseNum(row.querySelector('.qty').value)
+              * parseNum(row.querySelector('.boxes').value)
+              * parseNum(row.querySelector('.price').value);
+      total += amt;
+      row.querySelector('.amount').textContent = amt ? fmt(amt) : '';
+    });
+    var current = total
+      + parseNum(document.getElementById('delivery_fee').value)
+      - parseNum(document.getElementById('deduction').value)
+      - parseNum(document.getElementById('payment_received').value)
+      + prevBalance;
+
+    document.getElementById('prevBalanceCell').textContent = prevBalance ? fmt(prevBalance) : '';
+    document.getElementById('currentBalanceCell').textContent = fmt(current);
+  }
+
+  function markDirty() {
+    if (dirty) return;
+    dirty = true;
+    document.getElementById('dirtyHint').textContent = '● 저장되지 않은 변경사항';
+  }
+
+  // ── Spreadsheet navigation ───────────────────────────────
+  function matrix() {
+    return Array.prototype.map.call(document.querySelectorAll('.item-row'),
+      function (row) { return Array.prototype.slice.call(row.querySelectorAll('.cell')); });
+  }
+  function focusCell(r, c) {
+    var m = matrix();
+    if (r < 0 || r >= m.length || !m[r][c]) return false;
+    m[r][c].focus(); m[r][c].select(); return true;
+  }
+  function locate(input) {
+    var m = matrix();
+    for (var r = 0; r < m.length; r++) {
+      var c = m[r].indexOf(input);
+      if (c !== -1) return { r: r, c: c };
+    }
+    return null;
+  }
+  function onCellKeydown(e) {
+    var pos = locate(e.target);
+    if (!pos) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!focusCell(pos.r + 1, pos.c)) { addRow(); focusCell(pos.r + 1, pos.c); }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault(); focusCell(pos.r + 1, pos.c);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); focusCell(pos.r - 1, pos.c);
+    } else if (e.key === 'ArrowRight' && e.target.selectionStart === e.target.value.length) {
+      if (focusCell(pos.r, pos.c + 1)) e.preventDefault();
+    } else if (e.key === 'ArrowLeft' && e.target.selectionStart === 0) {
+      if (focusCell(pos.r, pos.c - 1)) e.preventDefault();
+    }
+  }
+
+  function addRow() {
+    var body = document.getElementById('itemsBody');
+    var row = body.querySelector('.item-row').cloneNode(true);
+    row.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+    row.querySelector('.amount').textContent = '';
+    body.appendChild(row);
+    wireRow(row);
+    return row;
+  }
+  function isLastRow(row) {
+    var rows = document.querySelectorAll('.item-row');
+    return rows[rows.length - 1] === row;
+  }
+  function wireRow(row) {
+    row.querySelectorAll('.cell').forEach(function (input) {
+      input.addEventListener('keydown', onCellKeydown);
+      input.addEventListener('input', function () {
+        markDirty();
+        recalc();
+        if (isLastRow(row) && input.value.trim() !== '') addRow();
+      });
+      if (input.classList.contains('price')) wireMoney(input);
+      else input.addEventListener('focus', function () { input.select(); });
+    });
+  }
+  document.querySelectorAll('.item-row').forEach(wireRow);
+  document.getElementById('addRow').addEventListener('click', function () {
+    addRow().querySelector('.cell').focus();
+  });
+
+  ['delivery_fee', 'deduction', 'payment_received'].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', function () { markDirty(); recalc(); });
+    wireMoney(el);
+  });
+
+  // Seller details and the bank line are typed straight onto the paper.
+  document.querySelectorAll('#paper input[name^="seller_"]').forEach(function (el) {
+    el.addEventListener('input', markDirty);
+  });
+
+  function applyBuyerFlags(option) {
+    var showDelivery = option && option.dataset.delivery === '1';
+    var showDeduct   = option && option.dataset.deduction === '1';
+    document.getElementById('deliveryRow').hidden = !showDelivery;
+    document.getElementById('deductionRow').hidden = !showDeduct;
+    if (!showDelivery) document.getElementById('delivery_fee').value = '0';
+    if (!showDeduct)   document.getElementById('deduction').value = '0';
+  }
+
+  buyerSelect.addEventListener('change', function () {
+    markDirty();
+    applyBuyerFlags(this.options[this.selectedIndex]);
+    if (!this.value) { prevBalance = 0; recalc(); return; }
+    var url = '/api/buyer/' + this.value + '/balance/';
+    if (invoicePk) url += '?exclude=' + invoicePk;
+    fetch(url).then(function (r) { return r.json(); })
+      .then(function (d) { prevBalance = d.previous_balance || 0; recalc(); })
+      .catch(function () { /* offline — keep what is on screen */ });
+  });
+
+  document.getElementById('dateField').addEventListener('change', function () {
+    markDirty();
+    renderDate();
+  });
+
+  applyBuyerFlags(buyerSelect.options[buyerSelect.selectedIndex]);
+  renderDate();
+  recalc();
+
+  window.addEventListener('beforeunload', function (e) {
+    if (!dirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+  document.getElementById('sheetForm').addEventListener('submit', function () { dirty = false; });
+
+  // ── PNG export ───────────────────────────────────────────
+  // A typed value lives only in the input's property, not its attribute, so it
+  // has to be written across or the exported picture comes out blank.
+  function freeze() {
+    document.querySelectorAll('#paper input').forEach(function (i) {
+      i.setAttribute('value', i.value);
+    });
+    document.querySelectorAll('#paper select').forEach(function (s) {
+      Array.prototype.forEach.call(s.options, function (o) {
+        if (o.selected) o.setAttribute('selected', 'selected');
+        else o.removeAttribute('selected');
+      });
+    });
+    document.body.classList.add('exporting');
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
+  function renderPng() {
+    freeze();
+    return htmlToImage
+      .toBlob(document.getElementById('paper'), { pixelRatio: 2, backgroundColor: '#ffffff' })
+      .then(function (b) { document.body.classList.remove('exporting'); return b; })
+      .catch(function (e) { document.body.classList.remove('exporting'); throw e; });
+  }
+  function fileName() {
+    var opt = buyerSelect.options[buyerSelect.selectedIndex];
+    var label = opt && opt.value ? opt.textContent.trim() : '계산서';
+    return label + '_' + document.getElementById('dateField').value + '.png';
+  }
+
+  document.getElementById('btnPng').addEventListener('click', function () {
+    var btn = this;
+    btn.disabled = true; btn.textContent = '⏳ 만드는 중...';
+    renderPng().then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = fileName();
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }).catch(function (err) {
+      alert('이미지를 만들지 못했습니다: ' + err);
+    }).then(function () {
+      btn.disabled = false; btn.textContent = '🖼 PNG 저장';
+    });
+  });
+
+  // ── Send to phone (QR handoff) ───────────────────────────
+  document.getElementById('btnPhone').addEventListener('click', function () {
+    if (!invoicePk) { alert('먼저 저장한 뒤에 폰으로 보낼 수 있습니다.'); return; }
+    if (dirty && !confirm('저장하지 않은 변경사항이 있습니다.\n마지막으로 저장된 내용이 전송됩니다. 계속할까요?')) return;
+
+    var target = document.getElementById('qrTarget');
+    target.innerHTML = '';
+    new QRCode(target, { text: shareUrl, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+    document.getElementById('qrUrl').textContent = shareUrl;
+
+    var host = window.location.hostname;
+    var warn = document.getElementById('qrWarn');
+    if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]') {
+      warn.textContent = '이 주소(' + host + ')는 휴대폰에서 열 수 없습니다. '
+        + '배포된 주소에서 사용하거나, 같은 와이파이의 PC IP 주소로 접속해 주세요.';
+      warn.hidden = false;
+    } else {
+      warn.hidden = true;
+    }
+    document.getElementById('qrModal').classList.add('show');
+  });
+  document.getElementById('qrClose').addEventListener('click', function () {
+    document.getElementById('qrModal').classList.remove('show');
+  });
+  document.getElementById('qrModal').addEventListener('click', function (e) {
+    if (e.target === this) this.classList.remove('show');
+  });
+
+  document.getElementById('toggleFax').addEventListener('click', function () {
+    var line = document.getElementById('faxLine');
+    line.hidden = !line.hidden;
+    if (!line.hidden) line.querySelector('input').focus();
+    else line.querySelector('input').value = '';
+    markDirty();
+  });
+
+  var flash = document.getElementById('flashWrap');
+  if (flash) setTimeout(function () { flash.style.display = 'none'; }, 3500);
+
+  var firstEmpty = Array.prototype.filter.call(
+    document.querySelectorAll('.item-row input[name="product_name[]"]'),
+    function (i) { return !i.value.trim(); })[0];
+  if (!buyerSelect.value) buyerSelect.focus();
+  else if (firstEmpty) firstEmpty.focus();
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>

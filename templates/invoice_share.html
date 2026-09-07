@@ -1,0 +1,166 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>{{ invoice.buyer.name }} 계산서 — {{ invoice.date }}</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="계산서">
+<link rel="icon" href="/icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="icon" href="/icons/icon-512.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="robots" content="noindex">
+
+{% include "_paper_css.html" %}
+
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #111;
+  color: #fff;
+  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', Arial, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+}
+
+.head-bar { text-align: center; margin-bottom: 14px; flex-shrink: 0; }
+.head-bar .who { font-size: 19px; font-weight: 800; letter-spacing: 2px; }
+.head-bar .when { font-size: 13px; color: #999; margin-top: 4px; }
+.head-bar .amount { font-size: 15px; margin-top: 8px; font-weight: 700; }
+.head-bar .amount span { color: #7ec98f; }
+
+.preview {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  margin-bottom: 16px;
+}
+.preview img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 4px;
+  box-shadow: 0 6px 26px rgba(0,0,0,.5);
+  background: #fff;
+}
+
+.status { text-align: center; color: #888; font-size: 14px; padding: 40px 0; line-height: 1.8; }
+.spinner {
+  width: 30px; height: 30px;
+  border: 3px solid #333; border-top-color: #fff;
+  border-radius: 50%; margin: 0 auto 14px;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.actions { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
+.btn {
+  display: block; width: 100%; padding: 17px;
+  font-family: inherit; font-size: 17px; font-weight: 800; letter-spacing: 2px;
+  border: none; border-radius: 10px; cursor: pointer;
+  text-align: center; text-decoration: none;
+}
+.btn-share { background: #1a7f37; color: #fff; }
+.btn-share:active { background: #156b2e; }
+.btn-save { background: #fff; color: #111; }
+.btn-save:active { background: #ddd; }
+.tip { text-align: center; font-size: 12px; color: #777; line-height: 1.7; }
+
+/* The full-size paper renders off-screen, then is shown as a picture. */
+.render-area { position: absolute; left: -10000px; top: 0; width: 210mm; }
+</style>
+</head>
+<body>
+
+<div class="head-bar">
+  <div class="who">{{ invoice.buyer.name }}</div>
+  <div class="when">{{ invoice.date|date:"Y년 m월 d일" }}</div>
+  <div class="amount">현 잔 액 <span>{{ invoice.current_balance|floatformat:0|intcomma }} 원</span></div>
+</div>
+
+<div class="preview" id="preview">
+  <div class="status" id="status">
+    <div class="spinner"></div>
+    계산서 이미지를 만드는 중...
+  </div>
+</div>
+
+<div class="actions">
+  <button type="button" class="btn btn-share" id="btnShare" disabled>📤 공 유 하 기</button>
+  <a class="btn btn-save" id="btnSave" download>⬇ 사진으로 저장</a>
+  <div class="tip" id="tip">이미지를 길게 눌러도 저장할 수 있습니다.</div>
+</div>
+
+<div class="render-area">
+  {% include "_paper.html" %}
+</div>
+
+<script src="/vendor/html-to-image.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var FILENAME = '{{ invoice.buyer.name|escapejs }}_{{ invoice.date|date:"Y-m-d" }}.png';
+  var TITLE = '{{ invoice.buyer.name|escapejs }} 계산서 ({{ invoice.date|date:"Y-m-d" }})';
+
+  var shareBtn = document.getElementById('btnShare');
+  var saveBtn = document.getElementById('btnSave');
+  var status = document.getElementById('status');
+  var preview = document.getElementById('preview');
+  var tip = document.getElementById('tip');
+  var imageBlob = null;
+
+  htmlToImage
+    .toBlob(document.getElementById('paper'), { pixelRatio: 2, backgroundColor: '#ffffff' })
+    .then(function (blob) {
+      if (!blob) throw new Error('빈 이미지');
+      imageBlob = blob;
+
+      var url = URL.createObjectURL(blob);
+      var img = new Image();
+      img.src = url;
+      img.alt = TITLE;
+      preview.innerHTML = '';
+      preview.appendChild(img);
+
+      saveBtn.href = url;
+      saveBtn.setAttribute('download', FILENAME);
+
+      // navigator.share with files is phone-only; hide the button where the
+      // browser cannot actually do it rather than failing on tap.
+      var file = new File([blob], FILENAME, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        shareBtn.disabled = false;
+      } else {
+        shareBtn.style.display = 'none';
+        tip.textContent = '이 브라우저는 바로 공유를 지원하지 않습니다. 저장한 뒤 보내주세요.';
+      }
+    })
+    .catch(function (err) {
+      status.innerHTML = '⚠️<br>이미지를 만들지 못했습니다.<br>' + (err && err.message ? err.message : err);
+      shareBtn.disabled = true;
+      saveBtn.style.display = 'none';
+    });
+
+  shareBtn.addEventListener('click', function () {
+    if (!imageBlob) return;
+    var file = new File([imageBlob], FILENAME, { type: 'image/png' });
+    navigator.share({ files: [file], title: TITLE })
+      .catch(function (err) {
+        // A user cancelling the share sheet lands here too — stay quiet.
+        if (err && err.name === 'AbortError') return;
+        alert('공유하지 못했습니다: ' + (err && err.message ? err.message : err));
+      });
+  });
+})();
+</script>
+</body>
+</html>

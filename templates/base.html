@@ -8,9 +8,12 @@
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#111111">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="계산서">
-<link rel="apple-touch-icon" href="/icons/icon-192.svg">
+<link rel="icon" href="/icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="icon" href="/icons/icon-512.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 
 <!-- SEO / Social -->
 <meta name="description" content="거래처 계산서 관리 시스템">
@@ -160,6 +163,24 @@ body {
   margin-bottom: 20px;
   box-shadow: var(--shadow);
 }
+
+/* ── Quick-action cards ──────────────────────────────────────── */
+.quick-card {
+  display: block;
+  text-decoration: none;
+  color: var(--black);
+  text-align: center;
+  padding: 24px;
+  margin-bottom: 0;
+  cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.quick-card:hover { background: var(--black); color: var(--white); }
+.quick-card:hover .quick-sub { color: #bbb; }
+.quick-card.is-primary { border: 2px solid var(--black); }
+.quick-emoji { font-size: 28px; margin-bottom: 8px; }
+.quick-title { font-size: 13px; letter-spacing: 2px; font-weight: 600; }
+.quick-sub { font-size: 11px; color: var(--muted); margin-top: 4px; transition: color .2s; }
 
 /* ── Page header ─────────────────────────────────────────────── */
 .page-header {

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load humanize %}
 {% block title %}계산서 목록{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -27,11 +28,11 @@
       <tr>
         <td style="text-align:center;">{{ inv.date }}</td>
         <td style="text-align:center;">{{ inv.buyer.name }}</td>
-        <td style="text-align:center;">{{ inv.seller.company_name }}</td>
-        <td style="text-align:right;font-weight:600;">{{ inv.current_balance|floatformat:0 }} 원</td>
+        <td style="text-align:center;">{{ inv.seller_name }}</td>
+        <td style="text-align:right;font-weight:600;">{{ inv.current_balance|floatformat:0|intcomma }} 원</td>
         <td style="text-align:center;">
-          <a href="{% url 'invoice_detail' inv.pk %}" class="btn btn-outline btn-sm">보기</a>
-          <a href="{% url 'invoice_print' inv.pk %}" class="btn btn-black btn-sm" target="_blank">인쇄</a>
+          <a href="{% url 'invoice_edit' inv.pk %}" class="btn btn-black btn-sm">열기</a>
+          <a href="{% url 'invoice_share' inv.pk %}" class="btn btn-outline btn-sm" target="_blank">📱</a>
         </td>
       </tr>
       {% empty %}

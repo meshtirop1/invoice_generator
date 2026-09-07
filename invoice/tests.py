@@ -8,6 +8,7 @@ from django.urls import reverse
 import datetime
 
 from .models import SellerProfile, Buyer, Invoice, InvoiceItem
+from .views import SHEET_MIN_ROWS
 
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -42,7 +43,9 @@ def make_invoice(seller, buyer, items=None, **kwargs):
         current_balance=0,
     )
     defaults.update(kwargs)
-    inv = Invoice.objects.create(**defaults)
+    inv = Invoice(**defaults)
+    inv.fill_seller_from_profile(defaults['seller'])
+    inv.save()
     for item in (items or []):
         InvoiceItem.objects.create(
             invoice=inv,
@@ -258,7 +261,8 @@ class InvoiceViewTest(TestCase):
         response = self.client.post(reverse('invoice_new'), data)
         self.assertEqual(Invoice.objects.count(), 1)
         inv = Invoice.objects.first()
-        self.assertRedirects(response, reverse('invoice_detail', kwargs={'pk': inv.pk}))
+        # Saving keeps him on the sheet so he can keep working / send it.
+        self.assertRedirects(response, reverse('invoice_edit', kwargs={'pk': inv.pk}))
 
     def test_invoice_new_post_calculates_balance(self):
         data = {
@@ -309,13 +313,13 @@ class InvoiceViewTest(TestCase):
         response = self.client.get(reverse('invoice_print', kwargs={'pk': inv.pk}))
         self.assertEqual(response.status_code, 200)
 
-    def test_invoice_print_pads_to_12_rows(self):
+    def test_invoice_print_pads_the_grid(self):
         inv = make_invoice(
             self.seller, self.buyer,
             items=[{'name': '사과', 'qty': 1, 'boxes': 1, 'price': 1000}],
         )
         response = self.client.get(reverse('invoice_print', kwargs={'pk': inv.pk}))
-        self.assertEqual(len(response.context['empty_rows']), 11)
+        self.assertEqual(len(response.context['empty_rows']), SHEET_MIN_ROWS - 1)
 
     def test_invoice_delete_get(self):
         inv = make_invoice(self.seller, self.buyer)
@@ -424,3 +428,342 @@ class AjaxViewTest(TestCase):
     def test_buyer_balance_404(self):
         response = self.client.get(reverse('buyer_balance', kwargs={'pk': 9999}))
         self.assertEqual(response.status_code, 404)
+
+
+# ─── Balance chain repair ─────────────────────────────────────────────────────
+
+class BalanceChainTest(TestCase):
+    """The running balance must stay correct after any edit, not just on create."""
+
+    def setUp(self):
+        self.seller = make_seller()
+        self.buyer = make_buyer()
+        self.i1 = make_invoice(
+            self.seller, self.buyer, date=datetime.date(2026, 1, 1),
+            items=[{'name': 'A', 'qty': 1, 'boxes': 1, 'price': 1000}],
+        )
+        self.i2 = make_invoice(
+            self.seller, self.buyer, date=datetime.date(2026, 2, 1),
+            items=[{'name': 'B', 'qty': 1, 'boxes': 1, 'price': 2000}],
+        )
+        self.i3 = make_invoice(
+            self.seller, self.buyer, date=datetime.date(2026, 3, 1),
+            items=[{'name': 'C', 'qty': 1, 'boxes': 1, 'price': 3000}],
+        )
+
+    def test_chain_is_correct_on_create(self):
+        for inv, prev, cur in [(self.i1, 0, 1000), (self.i2, 1000, 3000), (self.i3, 3000, 6000)]:
+            inv.refresh_from_db()
+            self.assertEqual(inv.previous_balance, Decimal(prev))
+            self.assertEqual(inv.current_balance, Decimal(cur))
+
+    def test_deleting_a_middle_invoice_repairs_later_balances(self):
+        self.i2.delete()
+        self.i3.refresh_from_db()
+        self.assertEqual(self.i3.previous_balance, Decimal('1000'))
+        self.assertEqual(self.i3.current_balance, Decimal('4000'))
+
+    def test_deleting_via_the_view_repairs_later_balances(self):
+        self.client.post(reverse('invoice_delete', kwargs={'pk': self.i1.pk}))
+        self.i2.refresh_from_db()
+        self.i3.refresh_from_db()
+        self.assertEqual(self.i2.previous_balance, Decimal('0'))
+        self.assertEqual(self.i2.current_balance, Decimal('2000'))
+        self.assertEqual(self.i3.current_balance, Decimal('5000'))
+
+    def test_editing_an_early_invoice_repairs_later_balances(self):
+        self.client.post(reverse('invoice_edit', kwargs={'pk': self.i1.pk}), {
+            'seller': self.seller.pk,
+            'buyer': self.buyer.pk,
+            'date': '2026-01-01',
+            'delivery_fee': '0',
+            'deduction': '0',
+            'payment_received': '0',
+            'product_name[]': ['A'],
+            'quantity[]': ['1'],
+            'boxes[]': ['1'],
+            'unit_price[]': ['9000'],
+        })
+        self.i1.refresh_from_db()
+        self.i3.refresh_from_db()
+        self.assertEqual(self.i1.current_balance, Decimal('9000'))
+        self.assertEqual(self.i3.previous_balance, Decimal('11000'))
+        self.assertEqual(self.i3.current_balance, Decimal('14000'))
+
+    def test_changing_an_item_recalculates(self):
+        item = self.i1.invoiceitem_set.first()
+        item.unit_price = 5000
+        item.save()
+        self.i3.refresh_from_db()
+        self.assertEqual(self.i3.current_balance, Decimal('10000'))
+
+    def test_adding_items_after_the_invoice_recalculates(self):
+        """The admin writes the Invoice row first and its items second."""
+        fresh = Invoice.objects.create(
+            seller=self.seller, buyer=make_buyer(name='관리자테스트'),
+            date=datetime.date(2026, 4, 1),
+        )
+        InvoiceItem.objects.create(
+            invoice=fresh, product_name='D', quantity=2, boxes=1, unit_price=2500,
+        )
+        fresh.refresh_from_db()
+        self.assertEqual(fresh.current_balance, Decimal('5000'))
+
+    def test_moving_an_invoice_to_another_buyer_repairs_both_chains(self):
+        other = make_buyer(name='다른거래처')
+        self.client.post(reverse('invoice_edit', kwargs={'pk': self.i2.pk}), {
+            'seller': self.seller.pk,
+            'buyer': other.pk,
+            'date': '2026-02-01',
+            'delivery_fee': '0',
+            'deduction': '0',
+            'payment_received': '0',
+            'product_name[]': ['B'],
+            'quantity[]': ['1'],
+            'boxes[]': ['1'],
+            'unit_price[]': ['2000'],
+        })
+        self.i3.refresh_from_db()
+        self.assertEqual(self.i3.previous_balance, Decimal('1000'))
+        self.assertEqual(self.i3.current_balance, Decimal('4000'))
+        self.assertEqual(other.get_current_balance(), Decimal('2000'))
+
+
+# ─── The editable sheet ───────────────────────────────────────────────────────
+
+class InvoiceSheetTest(TestCase):
+
+    def setUp(self):
+        self.seller = make_seller()
+        self.buyer = make_buyer()
+
+    def _payload(self, **overrides):
+        data = {
+            'seller': self.seller.pk,
+            'buyer': self.buyer.pk,
+            'date': '2026-06-01',
+            'delivery_fee': '0',
+            'deduction': '0',
+            'payment_received': '0',
+            'product_name[]': ['사과'],
+            'quantity[]': ['2'],
+            'boxes[]': ['3'],
+            'unit_price[]': ['1000'],
+        }
+        data.update(overrides)
+        return data
+
+    def test_new_sheet_renders(self):
+        response = self.client.get(reverse('invoice_new'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'invoice_sheet.html')
+
+    def test_edit_sheet_renders_with_values(self):
+        inv = make_invoice(
+            self.seller, self.buyer,
+            items=[{'name': '고등어', 'qty': 4, 'boxes': 2, 'price': 3000}],
+        )
+        response = self.client.get(reverse('invoice_edit', kwargs={'pk': inv.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '고등어')
+
+    def test_edit_sheet_404(self):
+        response = self.client.get(reverse('invoice_edit', kwargs={'pk': 9999}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_edit_replaces_items_rather_than_appending(self):
+        inv = make_invoice(
+            self.seller, self.buyer,
+            items=[{'name': '옛품목', 'qty': 1, 'boxes': 1, 'price': 100}],
+        )
+        self.client.post(
+            reverse('invoice_edit', kwargs={'pk': inv.pk}),
+            self._payload(**{'product_name[]': ['새품목'], 'quantity[]': ['1'],
+                             'boxes[]': ['1'], 'unit_price[]': ['500']}),
+        )
+        names = list(inv.invoiceitem_set.values_list('product_name', flat=True))
+        self.assertEqual(names, ['새품목'])
+
+    def test_decimal_quantity_is_preserved(self):
+        self.client.post(reverse('invoice_new'), self._payload(**{
+            'quantity[]': ['2.5'], 'boxes[]': ['2'], 'unit_price[]': ['1000'],
+        }))
+        item = InvoiceItem.objects.get()
+        self.assertEqual(item.quantity, Decimal('2.5'))
+        self.assertEqual(item.amount, Decimal('5000'))
+
+    def test_ragged_post_arrays_do_not_crash(self):
+        """A short quantity[] list used to raise IndexError and orphan the invoice."""
+        response = self.client.post(reverse('invoice_new'), self._payload(**{
+            'product_name[]': ['사과', '배', '감'],
+            'quantity[]': ['1'],
+            'boxes[]': ['1'],
+            'unit_price[]': ['1000'],
+        }))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Invoice.objects.count(), 1)
+        self.assertEqual(InvoiceItem.objects.count(), 3)
+
+    def test_missing_buyer_saves_nothing(self):
+        response = self.client.post(reverse('invoice_new'), self._payload(buyer=''))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Invoice.objects.count(), 0)
+
+    def test_comma_formatted_money_is_accepted(self):
+        self.client.post(reverse('invoice_new'), self._payload(
+            payment_received='1,500',
+            **{'unit_price[]': ['2,000']},
+        ))
+        inv = Invoice.objects.get()
+        self.assertEqual(inv.payment_received, Decimal('1500'))
+        self.assertEqual(inv.invoiceitem_set.get().unit_price, Decimal('2000'))
+
+
+# ─── Print / share output ─────────────────────────────────────────────────────
+
+class InvoiceOutputTest(TestCase):
+
+    def setUp(self):
+        self.seller = make_seller()
+        self.buyer = make_buyer()
+
+    def test_print_does_not_drop_items_past_twelve(self):
+        items = [{'name': '품목%02d' % i, 'qty': 1, 'boxes': 1, 'price': 100}
+                 for i in range(20)]
+        inv = make_invoice(self.seller, self.buyer, items=items)
+        response = self.client.get(reverse('invoice_print', kwargs={'pk': inv.pk}))
+        self.assertEqual(len(response.context['empty_rows']), 0)
+        for i in range(20):
+            self.assertContains(response, '품목%02d' % i)
+
+    def test_share_page_renders(self):
+        inv = make_invoice(
+            self.seller, self.buyer,
+            items=[{'name': '오징어', 'qty': 2, 'boxes': 1, 'price': 4000}],
+        )
+        response = self.client.get(reverse('invoice_share', kwargs={'pk': inv.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'invoice_share.html')
+        self.assertContains(response, '오징어')
+        self.assertContains(response, '홍길동')
+
+    def test_share_page_404(self):
+        response = self.client.get(reverse('invoice_share', kwargs={'pk': 9999}))
+        self.assertEqual(response.status_code, 404)
+
+
+# ─── AJAX balance, excluding the invoice being edited ─────────────────────────
+
+class BuyerBalanceExcludeTest(TestCase):
+
+    def test_exclude_skips_the_invoice_being_edited(self):
+        seller = make_seller()
+        buyer = make_buyer()
+        first = make_invoice(
+            seller, buyer, date=datetime.date(2026, 1, 1),
+            items=[{'name': 'A', 'qty': 1, 'boxes': 1, 'price': 1000}],
+        )
+        second = make_invoice(
+            seller, buyer, date=datetime.date(2026, 2, 1),
+            items=[{'name': 'B', 'qty': 1, 'boxes': 1, 'price': 2000}],
+        )
+        url = reverse('buyer_balance', kwargs={'pk': buyer.pk})
+
+        self.assertEqual(self.client.get(url).json()['previous_balance'], 3000)
+
+        excluded = self.client.get(url + '?exclude=%d' % second.pk).json()
+        first.refresh_from_db()
+        self.assertEqual(excluded['previous_balance'], int(first.current_balance))
+
+    def test_balance_response_carries_buyer_flags(self):
+        buyer = make_buyer(has_delivery_fee=True, has_deduction=False)
+        response = self.client.get(reverse('buyer_balance', kwargs={'pk': buyer.pk}))
+        self.assertTrue(response.json()['has_delivery_fee'])
+        self.assertFalse(response.json()['has_deduction'])
+
+
+# ─── Seller details are typed on the sheet and snapshotted ───────────────────
+
+class SellerSnapshotTest(TestCase):
+
+    def setUp(self):
+        self.profile = make_seller(company_name='해광')
+        self.buyer = make_buyer(name='정우상회')
+
+    def _payload(self, **overrides):
+        data = {
+            'buyer': self.buyer.pk,
+            'date': '2026-09-07',
+            'delivery_fee': '0',
+            'deduction': '0',
+            'payment_received': '0',
+            'seller_name': '해광',
+            'seller_address': '강원도 고성군 거진읍 벌평로112-1',
+            'seller_phone': '033 - 682 - 3597',
+            'seller_bank_account': '농협301-0386-7593-71 김길용',
+            'seller_fax': '',
+            'product_name[]': ['손질먹태'],
+            'quantity[]': ['100'],
+            'boxes[]': ['10'],
+            'unit_price[]': ['3,500'],
+        }
+        data.update(overrides)
+        return data
+
+    def test_typed_seller_details_are_saved(self):
+        self.client.post(reverse('invoice_new'), self._payload())
+        inv = Invoice.objects.get()
+        self.assertEqual(inv.seller_name, '해광')
+        self.assertEqual(inv.seller_phone, '033 - 682 - 3597')
+        self.assertEqual(inv.seller_bank_account, '농협301-0386-7593-71 김길용')
+        self.assertEqual(inv.current_balance, Decimal('3500000'))
+
+    def test_editing_seller_on_one_invoice_leaves_others_alone(self):
+        self.client.post(reverse('invoice_new'), self._payload())
+        first = Invoice.objects.get()
+        self.client.post(reverse('invoice_new'), self._payload(date='2026-09-08'))
+        second = Invoice.objects.exclude(pk=first.pk).get()
+
+        self.client.post(
+            reverse('invoice_edit', kwargs={'pk': second.pk}),
+            self._payload(date='2026-09-08', seller_name='다른상호',
+                          seller_phone='02-1111-2222'),
+        )
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(second.seller_name, '다른상호')
+        self.assertEqual(first.seller_name, '해광')
+        self.assertEqual(first.seller_phone, '033 - 682 - 3597')
+
+    def test_seller_profile_is_untouched_by_sheet_edits(self):
+        self.client.post(reverse('invoice_new'), self._payload(seller_name='임시상호'))
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.company_name, '해광')
+
+    def test_blank_sheet_prefills_from_default_profile(self):
+        response = self.client.get(reverse('invoice_new'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '해광')
+        self.assertFalse(response.context['is_saved'])
+
+    def test_saved_sheet_reports_is_saved(self):
+        self.client.post(reverse('invoice_new'), self._payload())
+        inv = Invoice.objects.get()
+        response = self.client.get(reverse('invoice_edit', kwargs={'pk': inv.pk}))
+        self.assertTrue(response.context['is_saved'])
+
+    def test_invoice_survives_with_no_seller_profile_in_the_database(self):
+        SellerProfile.objects.all().delete()
+        response = self.client.post(reverse('invoice_new'), self._payload())
+        self.assertEqual(response.status_code, 302)
+        inv = Invoice.objects.get()
+        self.assertEqual(inv.seller_name, '해광')
+
+    def test_print_and_share_use_the_snapshot(self):
+        self.client.post(reverse('invoice_new'), self._payload())
+        inv = Invoice.objects.get()
+        inv.seller_name = '스냅샷상호'
+        inv.save()
+        for name in ('invoice_print', 'invoice_share'):
+            response = self.client.get(reverse(name, kwargs={'pk': inv.pk}))
+            self.assertContains(response, '스냅샷상호')

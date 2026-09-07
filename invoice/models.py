@@ -1,5 +1,65 @@
+import contextlib
+import threading
+
 from django.db import models
+from django.db.models.signals import post_delete, post_save
+from django.dispatch import receiver
 from django.utils import timezone
+
+
+# ─── Recalculation control ───────────────────────────────────
+# The running-balance chain is recomputed automatically whenever an invoice or
+# an item changes, so the admin, the shell and the views can never leave a
+# buyer's balances stale. Bulk operations wrap themselves in suppress_recalc()
+# and call recalculate_chain() once at the end instead of once per row.
+
+_local = threading.local()
+
+
+@contextlib.contextmanager
+def suppress_recalc():
+    """Temporarily stop the signal handlers from recomputing the chain."""
+    previous = getattr(_local, 'suppressed', False)
+    _local.suppressed = True
+    try:
+        yield
+    finally:
+        _local.suppressed = previous
+
+
+def _recalc_enabled():
+    return not getattr(_local, 'suppressed', False)
+
+
+def recalculate_chain(buyer):
+    """
+    Recompute previous_balance / current_balance for every invoice of a buyer,
+    walking them oldest-first so each invoice carries the running total forward.
+
+    Safe to call at any time; it is the single source of truth for balances.
+    Uses bulk_update, which does not emit signals, so it cannot recurse.
+    """
+    if buyer is None:
+        return 0
+
+    invoices = list(
+        Invoice.objects
+        .filter(buyer=buyer)
+        .order_by('date', 'created_at', 'pk')
+        .prefetch_related('invoiceitem_set')
+    )
+
+    running = 0
+    for invoice in invoices:
+        invoice.previous_balance = running
+        invoice.current_balance = invoice.calculate_current_balance()
+        running = invoice.current_balance
+
+    if invoices:
+        Invoice.objects.bulk_update(
+            invoices, ['previous_balance', 'current_balance']
+        )
+    return len(invoices)
 
 
 class SellerProfile(models.Model):
@@ -48,8 +108,27 @@ class Invoice(models.Model):
     current_balance = models.DecimalField(max_digits=12, decimal_places=0, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Seller details are snapshotted per invoice: they are typed straight onto
+    # the sheet, and a past invoice must keep the details it was issued with
+    # even after the seller profile changes.
+    seller_name = models.CharField(max_length=100, blank=True, default='')
+    seller_address = models.CharField(max_length=255, blank=True, default='')
+    seller_phone = models.CharField(max_length=50, blank=True, default='')
+    seller_bank_account = models.CharField(max_length=100, blank=True, default='')
+    seller_fax = models.CharField(max_length=50, blank=True, default='')
+
     def __str__(self):
         return f"{self.buyer.name} - {self.date}"
+
+    def fill_seller_from_profile(self, profile):
+        """Seed the snapshot fields from a SellerProfile, for a fresh invoice."""
+        if profile is None:
+            return
+        self.seller_name = profile.company_name or ''
+        self.seller_address = profile.address or ''
+        self.seller_phone = profile.phone or ''
+        self.seller_bank_account = profile.bank_account or ''
+        self.seller_fax = profile.fax or ''
 
     def calculate_total_amount(self):
         return sum(item.amount for item in self.invoiceitem_set.all())
@@ -57,13 +136,6 @@ class Invoice(models.Model):
     def calculate_current_balance(self):
         total = self.calculate_total_amount()
         return total + self.delivery_fee - self.deduction - self.payment_received + self.previous_balance
-
-    def save(self, *args, **kwargs):
-        if not self.pk:
-            last = self.buyer.get_last_invoice()
-            self.previous_balance = last.current_balance if last else 0
-            self.current_balance = 0
-        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ['-date', '-created_at']
@@ -88,3 +160,31 @@ class InvoiceItem(models.Model):
 
     class Meta:
         ordering = ['order']
+
+
+# ─── Signals: keep the balance chain correct, always ─────────
+
+@receiver(post_save, sender=Invoice)
+def _invoice_saved(sender, instance, **kwargs):
+    if _recalc_enabled():
+        recalculate_chain(instance.buyer)
+        instance.refresh_from_db(fields=['previous_balance', 'current_balance'])
+
+
+@receiver(post_delete, sender=Invoice)
+def _invoice_deleted(sender, instance, **kwargs):
+    if _recalc_enabled():
+        recalculate_chain(instance.buyer)
+
+
+@receiver(post_save, sender=InvoiceItem)
+@receiver(post_delete, sender=InvoiceItem)
+def _item_changed(sender, instance, **kwargs):
+    if not _recalc_enabled():
+        return
+    # During a cascading Invoice delete the parent row may already be gone.
+    try:
+        buyer = instance.invoice.buyer
+    except Invoice.DoesNotExist:
+        return
+    recalculate_chain(buyer)

@@ -1,0 +1,116 @@
+{% comment %}
+Shared styling for the invoice paper. Included by the editable sheet, the print
+page and the phone share page so all three — and therefore the exported PNG —
+are pixel-identical.
+{% endcomment %}
+<style>
+.page {
+  width: 210mm;
+  min-height: 297mm;
+  background: #fff;
+  color: #000;
+  padding: 14mm 15mm;
+  font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif;
+  font-size: 13px;
+  color-scheme: light;
+}
+
+/* ── Title ───────────────────────────────────────────────── */
+.invoice-title {
+  text-align: center;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 12px;
+  padding: 4px 0 2px;
+  margin-bottom: 22px;
+}
+
+/* ── Header block: buyer + date left, seller right, no rule ─ */
+.head {
+  display: grid;
+  grid-template-columns: 42% 58%;
+  align-items: start;
+  margin-bottom: 18px;
+  min-height: 74px;
+}
+.head-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding-top: 2px;
+}
+.head-right {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.buyer-line,
+.date-line {
+  font-weight: 800;
+  border-bottom: 1.5px solid #000;
+  padding: 0 10px 3px;
+  text-align: center;
+  white-space: nowrap;
+}
+.buyer-line { font-size: 16px; letter-spacing: 1px; min-width: 130px; }
+.date-line  { font-size: 14px; letter-spacing: .5px; min-width: 150px; }
+
+.seller-name {
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  padding-bottom: 2px;
+}
+.seller-line {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  white-space: nowrap;
+}
+
+/* ── The grid ────────────────────────────────────────────── */
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.grid th {
+  background: #bdd7ee;
+  color: #1f4e79;
+  border: 1px solid #000;
+  height: 34px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-align: center;
+}
+.grid td {
+  border: 1px solid #000;
+  height: 36px;
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+/* Summary rows live inside the grid: label in 단가, value in 금액. */
+.grid td.sum-label {
+  font-weight: 800;
+  letter-spacing: 4px;
+}
+.grid td.sum-value { font-weight: 800; }
+.grid tr.total-row td.sum-value { font-size: 14px; }
+
+/* Bank line: one merged row across the foot of the grid. */
+.grid td.bank-row {
+  height: 54px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-align: center;
+}
+</style>

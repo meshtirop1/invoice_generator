@@ -1,10 +1,12 @@
 {% extends 'base.html' %}
+{% load humanize %}
 {% block title %}계산서 상세{% endblock %}
 {% block content %}
 <div class="page-header">
   <h1>{{ invoice.buyer.name }} — {{ invoice.date }}</h1>
   <div style="display:flex;gap:8px;">
     <a href="{% url 'invoice_list' %}" class="btn btn-outline">← 목록</a>
+    <a href="{% url 'invoice_edit' invoice.pk %}" class="btn btn-black">✏ 수정</a>
     <a href="{% url 'invoice_print' invoice.pk %}" class="btn btn-black" target="_blank">🖨 인쇄</a>
     <a href="{% url 'invoice_delete' invoice.pk %}" class="btn btn-danger">삭제</a>
   </div>
@@ -18,7 +20,7 @@
     </div>
     <div>
       <div style="font-size:11px;letter-spacing:2px;color:#888;margin-bottom:4px;">판매자</div>
-      <div style="font-size:16px;font-weight:600;">{{ invoice.seller.company_name }}</div>
+      <div style="font-size:16px;font-weight:600;">{{ invoice.seller_name }}</div>
     </div>
   </div>
  
@@ -32,10 +34,10 @@
       {% for item in items %}
       <tr>
         <td>{{ item.product_name }}</td>
-        <td style="text-align:right;">{{ item.quantity|floatformat:0 }}</td>
-        <td style="text-align:right;">{{ item.boxes|floatformat:0 }}</td>
-        <td style="text-align:right;">{{ item.unit_price|floatformat:0 }}</td>
-        <td style="text-align:right;font-weight:600;">{{ item.amount|floatformat:0 }}</td>
+        <td style="text-align:right;">{{ item.quantity|floatformat:"-2"|intcomma }}</td>
+        <td style="text-align:right;">{{ item.boxes|floatformat:"-2"|intcomma }}</td>
+        <td style="text-align:right;">{{ item.unit_price|floatformat:0|intcomma }}</td>
+        <td style="text-align:right;font-weight:600;">{{ item.amount|floatformat:0|intcomma }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -44,22 +46,22 @@
   <div style="max-width:360px;margin-left:auto;margin-top:16px;border-top:2px solid #111;padding-top:12px;">
     {% if invoice.buyer.has_delivery_fee %}
     <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;">
-      <span style="color:#888;">택 배 료</span><span>{{ invoice.delivery_fee|floatformat:0 }} 원</span>
+      <span style="color:#888;">택 배 료</span><span>{{ invoice.delivery_fee|floatformat:0|intcomma }} 원</span>
     </div>
     {% endif %}
     {% if invoice.buyer.has_deduction %}
     <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;">
-      <span style="color:#888;">공 제</span><span>{{ invoice.deduction|floatformat:0 }} 원</span>
+      <span style="color:#888;">공 제</span><span>{{ invoice.deduction|floatformat:0|intcomma }} 원</span>
     </div>
     {% endif %}
     <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;">
-      <span style="color:#888;">입 금</span><span>{{ invoice.payment_received|floatformat:0 }} 원</span>
+      <span style="color:#888;">입 금</span><span>{{ invoice.payment_received|floatformat:0|intcomma }} 원</span>
     </div>
     <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;">
-      <span style="color:#888;">전 잔 액</span><span>{{ invoice.previous_balance|floatformat:0 }} 원</span>
+      <span style="color:#888;">전 잔 액</span><span>{{ invoice.previous_balance|floatformat:0|intcomma }} 원</span>
     </div>
     <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:17px;font-weight:700;border-top:1px solid #ddd;margin-top:4px;">
-      <span>현 잔 액</span><span>{{ invoice.current_balance|floatformat:0 }} 원</span>
+      <span>현 잔 액</span><span>{{ invoice.current_balance|floatformat:0|intcomma }} 원</span>
     </div>
   </div>
 </div>

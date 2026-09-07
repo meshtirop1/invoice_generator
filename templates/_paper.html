@@ -1,0 +1,85 @@
+{% load humanize %}{% comment %}
+Read-only rendering of the invoice paper. Used by the print page and by the
+phone share page (which turns it into the PNG).
+Expects: invoice, items, empty_rows.
+{% endcomment %}
+<div class="page" id="paper">
+
+  <div class="invoice-title">계 산 서</div>
+
+  <div class="head">
+    <div class="head-left">
+      <div class="buyer-line">{{ invoice.buyer.name }}</div>
+      <div class="date-line">{{ invoice.date|date:"Y년 m월 d일" }}</div>
+    </div>
+    <div class="head-right">
+      <div class="seller-name">{{ invoice.seller_name }}</div>
+      <div class="seller-line">주소 : {{ invoice.seller_address }}</div>
+      <div class="seller-line">전화번호(사무실) : {{ invoice.seller_phone }}</div>
+      {% if invoice.seller_fax %}
+      <div class="seller-line">FAX : {{ invoice.seller_fax }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <table class="grid">
+    <thead>
+      <tr>
+        <th style="width:21%">품 명</th>
+        <th style="width:18%">수 량</th>
+        <th style="width:19%">박 스</th>
+        <th style="width:20.5%">단 가</th>
+        <th style="width:21.5%">금 액</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>{{ item.product_name }}</td>
+        <td>{{ item.quantity|floatformat:"-2"|intcomma }}</td>
+        <td>{{ item.boxes|floatformat:"-2"|intcomma }}</td>
+        <td>{{ item.unit_price|floatformat:0|intcomma }}</td>
+        <td>{{ item.amount|floatformat:0|intcomma }}</td>
+      </tr>
+      {% endfor %}
+      {% for _ in empty_rows %}
+      <tr><td></td><td></td><td></td><td></td><td></td></tr>
+      {% endfor %}
+
+      {% if invoice.buyer.has_delivery_fee %}
+      <tr>
+        <td></td><td></td><td></td>
+        <td class="sum-label">택 배 료</td>
+        <td class="sum-value">{% if invoice.delivery_fee %}{{ invoice.delivery_fee|floatformat:0|intcomma }}{% endif %}</td>
+      </tr>
+      {% endif %}
+      {% if invoice.buyer.has_deduction %}
+      <tr>
+        <td></td><td></td><td></td>
+        <td class="sum-label">공 제</td>
+        <td class="sum-value">{% if invoice.deduction %}{{ invoice.deduction|floatformat:0|intcomma }}{% endif %}</td>
+      </tr>
+      {% endif %}
+      <tr>
+        <td></td><td></td><td></td>
+        <td class="sum-label">입 금</td>
+        <td class="sum-value">{% if invoice.payment_received %}{{ invoice.payment_received|floatformat:0|intcomma }}{% endif %}</td>
+      </tr>
+      <tr>
+        <td></td><td></td><td></td>
+        <td class="sum-label">전 잔 액</td>
+        <td class="sum-value">{% if invoice.previous_balance %}{{ invoice.previous_balance|floatformat:0|intcomma }}{% endif %}</td>
+      </tr>
+      <tr class="total-row">
+        <td></td><td></td><td></td>
+        <td class="sum-label">현 잔 액</td>
+        <td class="sum-value">{{ invoice.current_balance|floatformat:0|intcomma }}</td>
+      </tr>
+
+      <tr>
+        <td class="bank-row" colspan="5">{{ invoice.seller_bank_account }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>

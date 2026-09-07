@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load humanize %}
 {% block title %}대시보드{% endblock %}
 
 {% block content %}
@@ -10,28 +11,22 @@
 <!-- Quick Action Cards -->
 <div class="form-row-3" style="margin-bottom:24px;">
 
-  <a href="{% url 'invoice_new' %}" style="text-decoration:none;">
-    <div class="card" style="margin-bottom:0;text-align:center;padding:24px;border:2px solid #111;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='#111';this.style.color='#fff'" onmouseout="this.style.background='#fff';this.style.color='#111'">
-      <div style="font-size:28px;margin-bottom:8px;">📄</div>
-      <div style="font-size:13px;letter-spacing:2px;font-weight:600;">새 계산서</div>
-      <div style="font-size:11px;color:#888;margin-top:4px;">New Invoice</div>
-    </div>
+  <a href="{% url 'invoice_new' %}" class="card quick-card is-primary">
+    <div class="quick-emoji">📄</div>
+    <div class="quick-title">새 계산서</div>
+    <div class="quick-sub">New Invoice</div>
   </a>
 
-  <a href="{% url 'buyer_list' %}" style="text-decoration:none;">
-    <div class="card" style="margin-bottom:0;text-align:center;padding:24px;border:1px solid #ddd;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='#111';this.style.color='#fff'" onmouseout="this.style.background='#fff';this.style.color='#111'">
-      <div style="font-size:28px;margin-bottom:8px;">🏪</div>
-      <div style="font-size:13px;letter-spacing:2px;font-weight:600;">거래처 관리</div>
-      <div style="font-size:11px;color:#888;margin-top:4px;">Manage Buyers</div>
-    </div>
+  <a href="{% url 'buyer_list' %}" class="card quick-card">
+    <div class="quick-emoji">🏪</div>
+    <div class="quick-title">거래처 관리</div>
+    <div class="quick-sub">Manage Buyers</div>
   </a>
 
-  <a href="{% url 'settings' %}" style="text-decoration:none;">
-    <div class="card" style="margin-bottom:0;text-align:center;padding:24px;border:1px solid #ddd;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='#111';this.style.color='#fff'" onmouseout="this.style.background='#fff';this.style.color='#111'">
-      <div style="font-size:28px;margin-bottom:8px;">⚙️</div>
-      <div style="font-size:13px;letter-spacing:2px;font-weight:600;">판매자 설정</div>
-      <div style="font-size:11px;color:#888;margin-top:4px;">Seller Settings</div>
-    </div>
+  <a href="{% url 'settings' %}" class="card quick-card">
+    <div class="quick-emoji">⚙️</div>
+    <div class="quick-title">판매자 설정</div>
+    <div class="quick-sub">Seller Settings</div>
   </a>
 
 </div>
@@ -86,7 +81,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px;">
       <span>{{ buyer.name }}</span>
       <div style="display:flex;align-items:center;gap:10px;">
-        <span style="font-weight:600;">{{ buyer.get_current_balance|floatformat:0 }} 원</span>
+        <span style="font-weight:600;">{{ buyer.get_current_balance|floatformat:0|intcomma }} 원</span>
         <a href="{% url 'invoice_list' %}?buyer={{ buyer.pk }}" class="btn btn-outline btn-sm">내역</a>
       </div>
     </div>
@@ -118,11 +113,11 @@
       <tr>
         <td style="text-align:center;">{{ inv.date }}</td>
         <td style="text-align:center;">{{ inv.buyer.name }}</td>
-        <td style="text-align:center;">{{ inv.seller.company_name }}</td>
-        <td style="text-align:right;font-weight:600;">{{ inv.current_balance|floatformat:0 }} 원</td>
+        <td style="text-align:center;">{{ inv.seller_name }}</td>
+        <td style="text-align:right;font-weight:600;">{{ inv.current_balance|floatformat:0|intcomma }} 원</td>
         <td style="text-align:center;">
-          <a href="{% url 'invoice_detail' inv.pk %}" class="btn btn-outline btn-sm">보기</a>
-          <a href="{% url 'invoice_print' inv.pk %}" class="btn btn-black btn-sm" target="_blank">인쇄</a>
+          <a href="{% url 'invoice_edit' inv.pk %}" class="btn btn-black btn-sm">열기</a>
+          <a href="{% url 'invoice_share' inv.pk %}" class="btn btn-outline btn-sm" target="_blank">📱</a>
         </td>
       </tr>
       {% empty %}

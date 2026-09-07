@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load humanize %}
 {% block title %}거래처 목록{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -16,7 +17,7 @@
         <td style="font-weight:600;">{{ buyer.name }}</td>
         <td style="text-align:center;">{% if buyer.has_delivery_fee %}✓{% endif %}</td>
         <td style="text-align:center;">{% if buyer.has_deduction %}✓{% endif %}</td>
-        <td style="text-align:right;font-weight:600;">{{ buyer.get_current_balance|floatformat:0 }} 원</td>
+        <td style="text-align:right;font-weight:600;">{{ buyer.get_current_balance|floatformat:0|intcomma }} 원</td>
         <td style="text-align:center;">
           <a href="{% url 'invoice_new' %}?buyer={{ buyer.pk }}" class="btn btn-black btn-sm">계산서 작성</a>
           <a href="{% url 'buyer_edit' buyer.pk %}" class="btn btn-outline btn-sm">수정</a>

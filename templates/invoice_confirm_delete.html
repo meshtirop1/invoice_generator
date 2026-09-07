@@ -11,7 +11,7 @@
   </p>
   <form method="post" style="display:flex;gap:10px;">
     {% csrf_token %}
-    <a href="{% url 'invoice_detail' invoice.pk %}" class="btn btn-outline">취소</a>
+    <a href="{% url 'invoice_edit' invoice.pk %}" class="btn btn-outline">취소</a>
     <button type="submit" class="btn btn-danger">삭제 확인</button>
   </form>
 </div>
