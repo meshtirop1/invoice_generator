@@ -15,17 +15,18 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 _raw_hosts = os.environ.get('ALLOWED_HOSTS', '*')
 ALLOWED_HOSTS = [h.strip() for h in _raw_hosts.split(',') if h.strip()]
 
-# PythonAnywhere — auto-allow *.pythonanywhere.com
-_pa_username = os.environ.get('PYTHONANYWHERE_USERNAME', '')
-if _pa_username:
-    _pa_domain = f'{_pa_username}.pythonanywhere.com'
-    if _pa_domain not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(_pa_domain)
-
 _csrf_origins = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(',') if o.strip()]
-if _pa_username:
-    CSRF_TRUSTED_ORIGINS.append(f'https://{_pa_username}.pythonanywhere.com')
+
+# Any real host we serve is also a trusted origin for form posts. Without this
+# a POST over HTTPS is rejected with a CSRF origin error, which is the usual
+# first surprise when moving behind a domain.
+for _host in ALLOWED_HOSTS:
+    if _host in ('*', 'localhost', '127.0.0.1', '[::1]') or _host.startswith('.'):
+        continue
+    _origin = f'https://{_host}'
+    if _origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_origin)
 
 # ── Apps ────────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
@@ -112,6 +113,29 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── Security headers (production only) ───────────────────────────────────────
 if not DEBUG:
-    SECURE_BROWSER_XSS_FILTER = True
     X_FRAME_OPTIONS = 'DENY'
     SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = 'same-origin'
+
+    # Behind nginx, Django only learns the request was HTTPS from the header
+    # the proxy forwards. Without this it believes every request is plain HTTP,
+    # and SECURE_SSL_REDIRECT would redirect forever.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+
+    # Off by default: nginx usually already redirects http -> https, and
+    # turning this on when the proxy does not send X-Forwarded-Proto takes the
+    # site down with a redirect loop. Set SECURE_SSL_REDIRECT=True to enable.
+    SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'False') == 'True'
+
+    # HSTS is hard to undo once a browser has cached it, so it is opt-in.
+    # Set SECURE_HSTS_SECONDS=31536000 once you are sure HTTPS is permanent.
+    SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0'))
+    if SECURE_HSTS_SECONDS:
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = (
+            os.environ.get('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'False') == 'True'
+        )
+        SECURE_HSTS_PRELOAD = os.environ.get('SECURE_HSTS_PRELOAD', 'False') == 'True'

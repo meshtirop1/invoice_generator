@@ -4,10 +4,9 @@ A professional invoice management web application built with Django, designed fo
 
 ---
 
-## Live Demo
+## Live
 
-> Hosted on PythonAnywhere:
-> `https://ahirn.pythonanywhere.com`
+> `https://inv.mtirop.com` — self-hosted on a VPS behind nginx.
 
 ---
 
@@ -43,8 +42,8 @@ A professional invoice management web application built with Django, designed fo
 | Database | SQLite (dev) / PostgreSQL (prod) |
 | Static Files | WhiteNoise |
 | Server | Gunicorn |
-| Hosting | PythonAnywhere |
-| CI/CD | GitHub Actions |
+| Hosting | Self-hosted VPS (nginx + gunicorn) |
+| CI | GitHub Actions |
 | Container | Docker |
 | Language | Python 3.12 |
 
@@ -89,8 +88,7 @@ invoice_generator/
 │   └── make_icons.py           # Regenerates the PNG icon set
 │
 ├── .github/workflows/
-│   ├── ci.yml                  # Run tests on every push
-│   └── deploy.yml              # Deploy to Railway on main
+│   └── ci.yml                  # Run tests on every push
 │
 ├── Dockerfile
 ├── docker-compose.yml
@@ -254,76 +252,74 @@ python manage.py test invoice --verbosity=2
 
 ---
 
-## Deploying to PythonAnywhere
+## Deploying to the VPS
 
-### 1. Open a Bash console and clone
+The server runs gunicorn behind nginx. Deploying is a pull, a migrate, a
+collectstatic and a restart:
 
 ```bash
-git clone https://github.com/meshtirop1/invoice_generator.git
-cd invoice_generator
-python3.12 -m venv .venv
+cd /path/to/invoice_generator
+git pull origin main
 source .venv/bin/activate
 pip install -r requirements.txt
-python manage.py migrate
-python manage.py create_default_superuser
-python manage.py seed_buyers
-python manage.py collectstatic --noinput
-```
-
-### 2. Create Web App
-
-- Go to **Web** tab → **Add a new web app**
-- Choose **Manual configuration** → **Python 3.12**
-
-### 3. Set the WSGI file
-
-Click the WSGI config file link and replace all contents with:
-
-```python
-import os, sys
-
-path = '/home/YOUR_USERNAME/invoice_generator'
-if path not in sys.path:
-    sys.path.append(path)
-
-os.environ['DJANGO_SETTINGS_MODULE'] = 'inv.settings'
-os.environ['PYTHONANYWHERE_USERNAME'] = 'YOUR_USERNAME'
-os.environ['SECRET_KEY'] = 'your-strong-secret-key-here'
-
-from django.core.wsgi import get_wsgi_application
-application = get_wsgi_application()
-```
-
-### 4. Set virtualenv path
-
-```
-/home/YOUR_USERNAME/invoice_generator/.venv
-```
-
-### 5. Add static files mapping
-
-| URL | Directory |
-|---|---|
-| `/static/` | `/home/YOUR_USERNAME/invoice_generator/staticfiles` |
-
-### 6. Reload the web app
-
-Visit `https://YOUR_USERNAME.pythonanywhere.com`
-
----
-
-## Updating a Live Deployment
-
-```bash
-cd invoice_generator
-git pull origin main
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
+sudo systemctl restart invoice        # whatever the gunicorn unit is called
 ```
 
-Then reload the web app from the PythonAnywhere **Web** tab.
+`startup.sh` does the same sequence for a container start.
 
----
+### Required environment
+
+Set these for the service (systemd `Environment=`, an `.env`, or the container):
+
+```bash
+SECRET_KEY='<a long random string>'
+DEBUG=False
+ALLOWED_HOSTS=inv.mtirop.com
+DATABASE_URL=postgres://user:pass@localhost:5432/invoice   # omit for SQLite
+```
+
+`CSRF_TRUSTED_ORIGINS` is derived from `ALLOWED_HOSTS` automatically
+(`https://<host>` for each real host), so a form post over HTTPS works without
+extra configuration.
+
+### nginx
+
+Django needs to be told the request arrived over HTTPS, or it treats every
+request as plain HTTP:
+
+```nginx
+location / {
+    proxy_pass         http://127.0.0.1:8000;
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Forwarded-Proto $scheme;   # required
+    proxy_set_header   X-Real-IP         $remote_addr;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+}
+```
+
+`SECURE_PROXY_SSL_HEADER` is already set for this. Turn on
+`SECURE_SSL_REDIRECT=True` only once that header is confirmed — without it
+Django will redirect to HTTPS forever.
+
+### Creating the admin user
+
+There is no default login. Create one explicitly, once:
+
+```bash
+python manage.py createsuperuser
+```
+
+Or non-interactively, for a container start:
+
+```bash
+DJANGO_SUPERUSER_USERNAME=... DJANGO_SUPERUSER_PASSWORD=... \
+  python manage.py create_default_superuser
+```
+
+The command is a no-op unless both are set, and never overwrites an existing
+user.
 
 ## Environment Variables
 
@@ -333,30 +329,34 @@ Then reload the web app from the PythonAnywhere **Web** tab.
 | `DEBUG` | No | `False` | Enable debug mode |
 | `ALLOWED_HOSTS` | No | `*` | Comma-separated allowed hosts |
 | `DATABASE_URL` | No | SQLite | PostgreSQL connection string |
-| `PYTHONANYWHERE_USERNAME` | No | — | Auto-adds PA domain to ALLOWED_HOSTS |
+| `CSRF_TRUSTED_ORIGINS` | No | derived | Extra trusted origins, comma-separated |
+| `SECURE_SSL_REDIRECT` | No | `False` | Redirect HTTP to HTTPS in Django |
+| `SECURE_HSTS_SECONDS` | No | `0` | Enable HSTS (e.g. `31536000`) |
+| `DJANGO_SUPERUSER_USERNAME` | No | — | Used by `create_default_superuser` |
+| `DJANGO_SUPERUSER_PASSWORD` | No | — | Used by `create_default_superuser` |
 
 ---
 
-## Default Superuser
+## Admin User
 
-| Field | Value |
-|---|---|
-| Username | `mtirop` |
-| Password | `12345678` |
-| Admin URL | `/admin` |
+There is no default superuser and no built-in password. Create one with
+`python manage.py createsuperuser`, or set `DJANGO_SUPERUSER_USERNAME` /
+`DJANGO_SUPERUSER_PASSWORD` and run `python manage.py create_default_superuser`.
 
-> ⚠️ Change the password after first login at `/admin/auth/user/mtirop/password/`
+> ⚠️ **The app itself has no authentication.** Every view — including creating,
+> editing and deleting invoices — is reachable by anyone who knows the URL.
+> `/admin` is protected, the rest of the site is not. Put HTTP basic auth in
+> nginx in front of it, or add `login_required`, before treating the deployment
+> as private.
 
----
-
-## CI/CD Pipeline
+## CI
 
 Every push to any branch:
 1. GitHub Actions runs all 69 tests
-2. Builds the Docker image to verify it compiles
+2. Checks for missing migrations
+3. Builds the Docker image to verify it compiles
 
-Every push to `main`:
-1. Tests pass → Railway auto-deploy triggered (if configured)
+Deployment is manual — see **Deploying to the VPS** above.
 
 ---
 
