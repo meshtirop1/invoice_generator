@@ -12,7 +12,7 @@ from .models import (
     Invoice,
     InvoiceItem,
     SellerProfile,
-    recalculate_chain,
+    recalculate_balances,
     suppress_recalc,
 )
 
@@ -101,9 +101,9 @@ def _persist_invoice(invoice, seller, buyer, date, fees, rows, seller_details):
         for row in rows:
             InvoiceItem.objects.create(invoice=invoice, **row)
 
-    recalculate_chain(buyer)
+    recalculate_balances(buyer)
     if previous_buyer is not None and previous_buyer.pk != buyer.pk:
-        recalculate_chain(previous_buyer)
+        recalculate_balances(previous_buyer)
 
     invoice.refresh_from_db()
     return invoice
@@ -131,14 +131,14 @@ def _render_sheet(request, invoice=None):
         selected_buyer = invoice.buyer
         selected_seller = invoice.seller
         date_value = invoice.date
-        previous_balance = invoice.previous_balance
+        previous_balance = 0   # invoices are independent; nothing carries in
     else:
         items = []
         preset = request.GET.get('buyer')
         selected_buyer = next((b for b in buyers if str(b.pk) == str(preset)), None)
         selected_seller = default_seller
         date_value = timezone.localdate()
-        previous_balance = selected_buyer.get_current_balance() if selected_buyer else 0
+        previous_balance = 0   # invoices are independent; nothing carries in
         # A blank sheet starts from the default profile, then is freely typed over.
         invoice = Invoice()
         invoice.fill_seller_from_profile(default_seller)
@@ -281,7 +281,7 @@ def invoice_delete(request, pk):
         buyer = invoice.buyer
         with suppress_recalc():
             invoice.delete()
-        recalculate_chain(buyer)
+        recalculate_balances(buyer)
         messages.success(request, '계산서가 삭제되었습니다.')
         return redirect('invoice_list')
     return render(request, 'invoice_confirm_delete.html', {'invoice': invoice})
@@ -368,18 +368,15 @@ def seller_edit(request, pk):
 
 # ─── AJAX ────────────────────────────────────────────────────
 def buyer_balance(request, pk):
-    """Previous balance for a buyer, optionally excluding the invoice being edited."""
+    """
+    Per-buyer settings the sheet needs when the buyer changes.
+
+    previous_balance is always 0 — invoices are independent — but the key is
+    kept so the sheet's existing fetch keeps working unchanged.
+    """
     buyer = get_object_or_404(Buyer, pk=pk)
-    exclude_pk = request.GET.get('exclude')
-
-    invoices = buyer.invoice_set.all()
-    if exclude_pk:
-        invoices = invoices.exclude(pk=exclude_pk)
-    last = invoices.order_by('-date', '-created_at').first()
-
-    balance = last.current_balance if last else 0
     return JsonResponse({
-        'previous_balance': int(balance),
+        'previous_balance': 0,
         'has_delivery_fee': buyer.has_delivery_fee,
         'has_deduction': buyer.has_deduction,
     })

@@ -1,6 +1,8 @@
 import contextlib
 import threading
 
+from decimal import Decimal
+
 from django.db import models
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
@@ -11,7 +13,7 @@ from django.utils import timezone
 # The running-balance chain is recomputed automatically whenever an invoice or
 # an item changes, so the admin, the shell and the views can never leave a
 # buyer's balances stale. Bulk operations wrap themselves in suppress_recalc()
-# and call recalculate_chain() once at the end instead of once per row.
+# and call recalculate_balances() once at the end instead of once per row.
 
 _local = threading.local()
 
@@ -31,12 +33,16 @@ def _recalc_enabled():
     return not getattr(_local, 'suppressed', False)
 
 
-def recalculate_chain(buyer):
+def recalculate_balances(buyer):
     """
-    Recompute previous_balance / current_balance for every invoice of a buyer,
-    walking them oldest-first so each invoice carries the running total forward.
+    Recompute current_balance for every invoice of a buyer.
 
-    Safe to call at any time; it is the single source of truth for balances.
+    Invoices are INDEPENDENT: each one stands alone and nothing carries forward
+    between them, so previous_balance is always zero. (It is kept as a column so
+    the decision stays reversible without a migration; the 전잔액 row on the
+    paper renders blank while it is zero, which matches the reference form.)
+
+    Still needed because an invoice's own total changes whenever its items do.
     Uses bulk_update, which does not emit signals, so it cannot recurse.
     """
     if buyer is None:
@@ -49,11 +55,9 @@ def recalculate_chain(buyer):
         .prefetch_related('invoiceitem_set')
     )
 
-    running = 0
     for invoice in invoices:
-        invoice.previous_balance = running
+        invoice.previous_balance = 0
         invoice.current_balance = invoice.calculate_current_balance()
-        running = invoice.current_balance
 
     if invoices:
         Invoice.objects.bulk_update(
@@ -93,8 +97,17 @@ class Buyer(models.Model):
         return self.invoice_set.order_by('-date', '-created_at').first()
 
     def get_current_balance(self):
-        last = self.get_last_invoice()
-        return last.current_balance if last else 0
+        """
+        Total still outstanding across this buyer's invoices.
+
+        With independent invoices there is no single running balance, so the
+        only meaningful per-buyer figure is the sum of what each invoice still
+        has owing.
+        """
+        return sum(
+            (inv.current_balance for inv in self.invoice_set.all()),
+            Decimal('0'),
+        )
 
 
 class Invoice(models.Model):
@@ -134,8 +147,9 @@ class Invoice(models.Model):
         return sum(item.amount for item in self.invoiceitem_set.all())
 
     def calculate_current_balance(self):
+        """What this invoice alone still has owing. Nothing is carried in."""
         total = self.calculate_total_amount()
-        return total + self.delivery_fee - self.deduction - self.payment_received + self.previous_balance
+        return total + self.delivery_fee - self.deduction - self.payment_received
 
     class Meta:
         ordering = ['-date', '-created_at']
@@ -167,14 +181,14 @@ class InvoiceItem(models.Model):
 @receiver(post_save, sender=Invoice)
 def _invoice_saved(sender, instance, **kwargs):
     if _recalc_enabled():
-        recalculate_chain(instance.buyer)
+        recalculate_balances(instance.buyer)
         instance.refresh_from_db(fields=['previous_balance', 'current_balance'])
 
 
 @receiver(post_delete, sender=Invoice)
 def _invoice_deleted(sender, instance, **kwargs):
     if _recalc_enabled():
-        recalculate_chain(instance.buyer)
+        recalculate_balances(instance.buyer)
 
 
 @receiver(post_save, sender=InvoiceItem)
@@ -187,4 +201,4 @@ def _item_changed(sender, instance, **kwargs):
         buyer = instance.invoice.buyer
     except Invoice.DoesNotExist:
         return
-    recalculate_chain(buyer)
+    recalculate_balances(buyer)

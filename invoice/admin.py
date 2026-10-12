@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    SellerProfile, Buyer, Invoice, InvoiceItem, recalculate_chain,
+    SellerProfile, Buyer, Invoice, InvoiceItem, recalculate_balances,
 )
 
 
@@ -20,7 +20,7 @@ class InvoiceAdmin(admin.ModelAdmin):
         # Inline items are written after the Invoice row, so the balances have
         # to be recomputed once the items actually exist.
         super().save_related(request, form, formsets, change)
-        recalculate_chain(form.instance.buyer)
+        recalculate_balances(form.instance.buyer)
 
 
 @admin.register(Buyer)

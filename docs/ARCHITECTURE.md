@@ -16,14 +16,14 @@ Two ideas drive the whole design:
 
 1. **The printed artifact is the input surface.** There is no "form page" that
    later becomes an invoice.
-2. **The running balance is a derived value, not a stored fact** — even though
+2. **An invoice's total is a derived value, not a stored fact** — even though
    it is stored.
 
 Everything else falls out of those two.
 
 ```
 inv/settings.py          Environment-aware config, VPS + reverse proxy
-invoice/models.py        4 models + the balance chain + signals
+invoice/models.py        4 models + balance recalculation + signals
 invoice/views.py         16 views, all function-based
 templates/_paper_css.html   Shared paper styling  (sheet = print = PNG)
 templates/_paper.html       Shared read-only paper markup
@@ -34,57 +34,50 @@ public/vendor/           html-to-image, qrcode.js (vendored, no CDN)
 
 ---
 
-## 1. The balance chain — the one real invariant
+## 1. Balances — invoices are independent
 
-Each buyer has an ordered ledger. Invoice *n*'s opening balance is invoice
-*n−1*'s closing balance:
+Each invoice stands alone:
 
 ```
 current_balance = Σ(qty × boxes × unit_price)
                 + delivery_fee − deduction − payment_received
-                + previous_balance
 ```
 
-The original code snapshotted `previous_balance` **once, in `Invoice.save()`,
-only when `self.pk` was None**. That is fine if invoices are append-only. They
-are not — the UI has a delete button, and now an edit sheet. Delete invoice 3 of
-5 and invoices 4–5 keep an opening balance referencing a row that no longer
-exists. Silent, permanent, and it compounds forward.
+Nothing carries between invoices.
 
-So the snapshot is gone. `recalculate_chain(buyer)` (`invoice/models.py:34`) is
-the single source of truth:
+### History, because the code still carries its shape
 
-```python
-invoices = (Invoice.objects
-            .filter(buyer=buyer)
-            .order_by('date', 'created_at', 'pk')
-            .prefetch_related('invoiceitem_set'))
+The app originally ran a **running tab**: `Invoice.save()` snapshotted
+`previous_balance` from the buyer's last invoice, so each invoice opened with
+what was still owed. That was deliberate — wholesale shops pay on credit, and
+the paper form has a 전 잔 액 row for exactly this.
 
-running = 0
-for invoice in invoices:
-    invoice.previous_balance = running
-    invoice.current_balance = invoice.calculate_current_balance()
-    running = invoice.current_balance
+It was dropped on request: the owner wanted every invoice to read as its own
+sale, and the carry-forward made each new invoice look inflated.
 
-Invoice.objects.bulk_update(invoices, ['previous_balance', 'current_balance'])
-```
+Two artefacts of that history remain, both on purpose:
 
-`prefetch_related` keeps it at 2 queries regardless of invoice count.
-`bulk_update` writes in one.
+- **`previous_balance` is still a column**, always written as `0`. Keeping it
+  means the decision reverses without a migration, and the 전 잔 액 row renders
+  blank while it is zero, which is what the reference form looks like anyway.
+- **`recalculate_balances(buyer)`** still walks every invoice for a buyer rather
+  than just the one that changed. It no longer carries a running total, but an
+  invoice's own figure still has to be recomputed whenever its items change, and
+  a per-buyer sweep is cheap (two queries) and impossible to get wrong.
 
 ### How it stays correct: signals, not discipline
 
-`models.py:167-190` hooks `post_save` / `post_delete` on both `Invoice` and
+`models.py` hooks `post_save` / `post_delete` on both `Invoice` and
 `InvoiceItem`. Any write anywhere — a view, the admin, `manage.py shell`, a data
-migration — repairs the chain.
+migration — recomputes the affected invoices.
 
 Two things make that safe:
 
 - **`bulk_update` does not emit signals.** That is the entire reason
   recalculation cannot recurse into itself.
-- **`suppress_recalc()`** (`models.py:20`) is a `threading.local` flag. Writing
-  15 items would otherwise fire 15 full recalcs, so bulk paths suppress and call
-  `recalculate_chain` once at the end.
+- **`suppress_recalc()`** is a `threading.local` flag. Writing 15 items would
+  otherwise fire 15 full recalcs, so bulk paths suppress and call
+  `recalculate_balances` once at the end.
 
 ### The admin was the sneakiest case
 
@@ -92,13 +85,19 @@ Django's `ModelAdmin` saves the `Invoice` row **first**, then inline
 `InvoiceItem`s. The old `save()` forced `current_balance = 0` on create and
 nothing ran afterwards — so **every invoice created through `/admin` was
 permanently zero**. The signal fixes it generically; `InvoiceAdmin.save_related()`
-also calls it explicitly, and the balance fields are `readonly_fields` now, since
+also calls it explicitly, and the balance fields are `readonly_fields`, since
 typing into them would be a lie.
 
 `_item_changed` guards `Invoice.DoesNotExist` — during a cascading invoice
 delete, the item's parent row may already be gone.
 
----
+### The one thing independence costs
+
+Nothing tracks a cumulative debt. If a shop has three unpaid invoices, no
+invoice shows the combined figure. `Buyer.get_current_balance()` compensates by
+summing `current_balance` across the buyer's invoices, and that total is what
+the dashboard and buyer list display — but it appears nowhere on the printed
+sheet.
 
 ## 2. The sheet — how the paper became the form
 
@@ -189,7 +188,7 @@ def _persist_invoice(invoice, seller, buyer, date, fees, rows, seller_details):
         for row in rows:
             InvoiceItem.objects.create(invoice=invoice, **row)
 
-    recalculate_chain(buyer)
+    recalculate_balances(buyer)
     if previous_buyer is not None and previous_buyer.pk != buyer.pk:
         recalculate_chain(previous_buyer)   # invoice moved between buyers
 ```
@@ -347,7 +346,7 @@ HSTS is painful to walk back.
 
 | Class | Covers |
 |---|---|
-| `BalanceChainTest` | Chain repair after delete, edit, item change, buyer reassignment, and the admin write order |
+| `IndependentInvoiceTest` | Delete, edit, item change and payment each move only their own invoice; per-buyer outstanding total; the admin write order |
 | `InvoiceSheetTest` | Sheet render, item replacement, decimals, ragged POST arrays, comma-formatted money |
 | `SellerSnapshotTest` | Seller details saved, isolated per invoice, profile untouched, empty database |
 | `InvoiceOutputTest` | Print does not drop items past the grid minimum; share page renders |

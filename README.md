@@ -21,12 +21,13 @@ A professional invoice management web application built with Django, designed fo
 - **Send to phone** — One button turns the invoice into a PNG and shows a QR
   code. Scan it with a phone camera and the image opens there, ready to share
   into KakaoTalk. Replaces print → photograph → send.
-- **Self-repairing balances** — Editing or deleting any invoice recalculates
-  every later invoice for that buyer automatically.
+- **Independent invoices** — Each invoice stands alone. Nothing carries between
+  them, so editing or deleting one never disturbs another.
 - **Invoice Management** — Create, edit, print, and delete invoices
 - **Buyer Management** — Maintain a full list of buyers/clients
 - **Seller Profiles** — Support multiple seller profiles with a default selection
-- **Balance Tracking** — Automatically carries over previous balance to next invoice
+- **Per-buyer total** — The dashboard sums what each buyer still owes across
+  their unpaid invoices
 - **Print-Ready Invoices** — Clean single-page A4 print layout, no URL headers/footers
 - **PWA Support** — Install as an app on desktop or mobile (works offline)
 - **Korean UI** — Fully localised interface in Korean (한국어)
@@ -145,13 +146,29 @@ another invoice. Migration `0003` backfills existing invoices from their FK.
 The `seller` FK is retained for existing data; the printed and exported sheet
 reads the snapshot fields.
 
-### Balance chain
+### Balances
 
-`previous_balance` is no longer a one-time snapshot. `recalculate_chain(buyer)`
-walks that buyer's invoices oldest-first and rewrites both balance fields, and
-it runs automatically on every invoice/item save and delete — including from the
-Django admin. Bulk operations wrap themselves in `suppress_recalc()` and call it
-once at the end.
+Invoices are **independent**. Each one shows only its own amount:
+
+```
+current_balance = Σ(qty × boxes × unit_price)
+                + delivery_fee − deduction − payment_received
+```
+
+Nothing carries between invoices. `previous_balance` is kept as a column but is
+always `0`, so the 전 잔 액 row on the paper renders blank — which matches the
+reference form. Keeping the column means the decision can be reversed without a
+migration.
+
+`recalculate_balances(buyer)` still exists and still runs on every invoice/item
+save and delete, including from the Django admin, because an invoice's own total
+changes whenever its items do. Bulk operations wrap themselves in
+`suppress_recalc()` and call it once at the end.
+
+`Buyer.get_current_balance()` returns the **sum of what that buyer still owes
+across all their invoices** — the only per-buyer figure that still means
+anything once invoices stand alone. That is what the dashboard and buyer list
+show.
 
 ---
 
@@ -168,8 +185,8 @@ Invoice
   ├── seller (FK → SellerProfile)
   ├── buyer  (FK → Buyer)
   ├── date, delivery_fee, deduction, payment_received
-  ├── previous_balance (auto-carried from last invoice)
-  └── current_balance  (auto-calculated)
+  ├── previous_balance (always 0 — invoices are independent)
+  └── current_balance  (auto-calculated: this invoice alone)
 
 InvoiceItem
   ├── invoice (FK → Invoice)
@@ -244,7 +261,7 @@ python manage.py test invoice --verbosity=2
 - All views (GET/POST, redirects, 404s)
 - AJAX endpoints
 - Edge cases (empty rows, zero quantities, balance carry-over)
-- Balance-chain repair after editing, deleting or re-assigning an invoice
+- Invoice independence: editing, deleting or paying one never moves another
 - The admin path (items written after the invoice row)
 - Decimal quantities, comma-formatted money, ragged POST arrays
 - Print output no longer dropping items past row 12
