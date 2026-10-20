@@ -123,8 +123,9 @@ class InvoiceItemModelTest(TestCase):
             boxes=Decimal('3'),
             unit_price=Decimal('2000'),
         )
-        # 5 * 3 * 2000 = 30000
-        self.assertEqual(item.amount, Decimal('30000'))
+        # 5 * 3 * 2000 = 30000 — the cells are text, the amount still works itself out
+        self.assertEqual(item.amount, '30000')
+        self.assertEqual(item.amount_value, Decimal('30000'))
 
     def test_str(self):
         item = InvoiceItem.objects.create(
@@ -144,7 +145,7 @@ class InvoiceItemModelTest(TestCase):
             boxes=5,
             unit_price=3000,
         )
-        self.assertEqual(item.amount, Decimal('0'))
+        self.assertEqual(item.amount, '0')
 
 
 # ─── Model: Invoice ───────────────────────────────────────────────────────────
@@ -589,8 +590,8 @@ class InvoiceSheetTest(TestCase):
             'quantity[]': ['2.5'], 'boxes[]': ['2'], 'unit_price[]': ['1000'],
         }))
         item = InvoiceItem.objects.get()
-        self.assertEqual(item.quantity, Decimal('2.5'))
-        self.assertEqual(item.amount, Decimal('5000'))
+        self.assertEqual(item.quantity, '2.5')
+        self.assertEqual(item.amount, '5000')
 
     def test_ragged_post_arrays_do_not_crash(self):
         """A short quantity[] list used to raise IndexError and orphan the invoice."""
@@ -616,7 +617,9 @@ class InvoiceSheetTest(TestCase):
         ))
         inv = Invoice.objects.get()
         self.assertEqual(inv.payment_received, Decimal('1500'))
-        self.assertEqual(inv.invoiceitem_set.get().unit_price, Decimal('2000'))
+        item = inv.invoiceitem_set.get()
+        self.assertEqual(item.unit_price, '2,000')          # kept as typed
+        self.assertEqual(item.amount, '12000')              # 2 × 3 × 2,000
 
 
 # ─── Print / share output ─────────────────────────────────────────────────────
@@ -675,3 +678,95 @@ class BuyerLookupTest(TestCase):
         response = self.client.get(reverse('buyer_balance', kwargs={'pk': buyer.pk}))
         self.assertTrue(response.json()['has_delivery_fee'])
         self.assertFalse(response.json()['has_deduction'])
+
+
+# ─── Text in 수량 / 박스 / 단가 / 금액 ─────────────────────────────────────────
+
+class ItemTextCellsTest(TestCase):
+    """The four number columns take any text ('10kg', '3박스', '시가'). The amount works itself
+    out when quantity, boxes and price are all numbers; otherwise it is typed, and only an
+    amount that is a number counts towards the total."""
+
+    def setUp(self):
+        self.seller = make_seller()
+        self.buyer = make_buyer()
+
+    def post(self, **rows):
+        data = {
+            'seller': self.seller.pk, 'buyer': self.buyer.pk, 'date': '2026-06-01',
+            'delivery_fee': '0', 'deduction': '0', 'payment_received': '0',
+            'product_name[]': ['고등어'], 'quantity[]': [''], 'boxes[]': [''], 'unit_price[]': [''],
+            'amount[]': [''],
+        }
+        data.update(rows)
+        self.client.post(reverse('invoice_new'), data)
+        return Invoice.objects.latest('pk')
+
+    def test_text_is_kept_in_every_cell_and_a_typed_number_amount_counts(self):
+        inv = self.post(**{'quantity[]': ['10kg'], 'boxes[]': ['3박스'], 'unit_price[]': ['시가'],
+                           'amount[]': ['60,000']})
+        item = inv.invoiceitem_set.get()
+        self.assertEqual((item.quantity, item.boxes, item.unit_price, item.amount),
+                         ('10kg', '3박스', '시가', '60,000'))
+        self.assertEqual(inv.calculate_total_amount(), Decimal('60000'))
+        self.assertEqual(inv.current_balance, Decimal('60000'))
+
+    def test_a_text_amount_adds_nothing_to_the_total(self):
+        inv = self.post(**{'product_name[]': ['고등어', '운임'], 'quantity[]': ['2', ''],
+                           'boxes[]': ['3', ''], 'unit_price[]': ['1,000', ''], 'amount[]': ['', '별도']})
+        self.assertEqual([i.amount for i in inv.invoiceitem_set.all()], ['6000', '별도'])
+        self.assertEqual(inv.current_balance, Decimal('6000'))
+
+    def test_numbers_in_all_three_cells_work_out_the_amount_over_what_was_typed(self):
+        inv = self.post(**{'quantity[]': ['₩2'], 'boxes[]': ['3'], 'unit_price[]': ['1000원'],
+                           'amount[]': ['1']})
+        self.assertEqual(inv.invoiceitem_set.get().amount, '6000')
+
+    def test_the_paper_shows_text_as_typed_and_numbers_with_separators(self):
+        inv = self.post(**{'product_name[]': ['고등어', '오징어'], 'quantity[]': ['10kg', '2.5'],
+                           'boxes[]': ['3', '4'], 'unit_price[]': ['시가', '12000'], 'amount[]': ['협의', '']})
+        for name in ('invoice_print', 'invoice_share', 'invoice_detail'):
+            with self.subTest(page=name):
+                page = self.client.get(reverse(name, kwargs={'pk': inv.pk}))
+                for text in ('10kg', '시가', '협의', '2.5', '12,000', '120,000'):
+                    self.assertContains(page, text)
+
+    def test_the_sheet_opens_the_normal_keyboard_and_keeps_text_when_editing(self):
+        inv = self.post(**{'quantity[]': ['10kg'], 'boxes[]': ['3'], 'unit_price[]': ['시가'],
+                           'amount[]': ['협의']})
+        page = self.client.get(reverse('invoice_edit', kwargs={'pk': inv.pk})).content.decode()
+        for name in ('quantity[]', 'boxes[]', 'unit_price[]', 'amount[]'):
+            tag = page[page.index(f'name="{name}"') - 60:page.index(f'name="{name}"') + 120]
+            self.assertNotIn('inputmode', tag, name)
+        self.assertIn('value="10kg"', page)
+        self.assertIn('value="시가"', page)
+        self.assertIn('value="협의"', page)
+
+    def test_the_cell_filter(self):
+        from invoice.templatetags.invoice_cells import cell
+        self.assertEqual(cell('120000'), '120,000')
+        self.assertEqual(cell('1,234.50'), '1,234.5')
+        self.assertEqual(cell('0'), '0')
+        self.assertEqual(cell('10kg'), '10kg')
+        self.assertEqual(cell('₩5,000'), '₩5,000')
+        self.assertEqual(cell(''), '')
+
+    def test_number_reading(self):
+        from invoice.models import number_in
+        cases = {'1,000': 1000, '₩1,000': 1000, '1000원': 1000, '2.5': Decimal('2.5'),
+                 '￦１２３': 123, '\\3,000': 3000, '시가': None, '10kg': None, '': None}
+        for text, number in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(number_in(text), None if number is None else Decimal(number))
+
+    def test_the_migration_tidies_numbers_from_the_old_columns(self):
+        from importlib import import_module
+        from django.apps import apps
+        inv = make_invoice(self.seller, self.buyer, items=[{'name': 'A', 'qty': 1, 'boxes': 1, 'price': 1}])
+        InvoiceItem.objects.filter(invoice=inv).update(
+            quantity='10.00', boxes='2.50', unit_price='5000.0', amount='시가')
+        import_module('invoice.migrations.0004_item_cells_accept_text').tidy_numbers(apps, None)
+        item = inv.invoiceitem_set.get()
+        self.assertEqual((item.quantity, item.boxes, item.unit_price, item.amount),
+                         ('10', '2.5', '5000', '시가'))
+

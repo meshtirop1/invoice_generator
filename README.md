@@ -151,9 +151,15 @@ reads the snapshot fields.
 Invoices are **independent**. Each one shows only its own amount:
 
 ```
-current_balance = Σ(qty × boxes × unit_price)
+current_balance = Σ(item amounts that are numbers)
                 + delivery_fee − deduction − payment_received
 ```
+
+An item's amount is `qty × boxes × unit_price` when those three cells are all numbers.
+The four cells (수량 / 박스 / 단가 / 금액) are text, kept exactly as typed — `10kg`,
+`3박스`, `시가` are fine — so when any of the three is text the amount is typed by hand,
+and only an amount that reads as a number (`120,000`, `₩120,000`, `120000원`) is added up.
+An amount like `별도` prints as typed and adds nothing.
 
 Nothing carries between invoices. `previous_balance` is kept as a column but is
 always `0`, so the 전 잔 액 row on the paper renders blank — which matches the
@@ -190,8 +196,9 @@ Invoice
 
 InvoiceItem
   ├── invoice (FK → Invoice)
-  ├── product_name, quantity, boxes, unit_price
-  └── amount  (auto = quantity × boxes × unit_price)
+  ├── product_name
+  ├── quantity, boxes, unit_price  (text, as typed — '10kg', '시가', '1,000')
+  └── amount  (text; = quantity × boxes × unit_price when all three are numbers)
 ```
 
 ---
@@ -263,7 +270,7 @@ python manage.py test invoice --verbosity=2
 - Edge cases (empty rows, zero quantities, balance carry-over)
 - Invoice independence: editing, deleting or paying one never moves another
 - The admin path (items written after the invoice row)
-- Decimal quantities, comma-formatted money, ragged POST arrays
+- Text in 수량/박스/단가/금액, worked-out vs typed amounts, comma-formatted money, ragged POST arrays
 - Print output no longer dropping items past row 12
 - Seller snapshots: saved from the sheet, isolated per invoice, profile untouched
 

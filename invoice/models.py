@@ -1,12 +1,41 @@
 import contextlib
+import re
 import threading
+import unicodedata
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import models
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.utils import timezone
+
+
+# ─── Item cells: text that may or may not be a number ────────
+#
+# 수량 / 박스 / 단가 / 금액 are stored exactly as typed, so a cell can say '10kg', '3박스' or
+# '시가' as well as '1,000'. number_in() reads the number out of a cell when it is one.
+
+_NUMBER = re.compile(r'-?\d+(\.\d+)?')
+_IGNORED = (',', '₩', '\\', '원', ' ')   # '\\' is how a Korean keyboard types ₩
+
+
+def number_in(text):
+    """The number a cell holds — '1,000', '₩1,000', '1000원', '2.5' — or None for anything
+    else ('시가', '10kg', blank)."""
+    if text is None:
+        return None
+    if isinstance(text, (int, Decimal)):
+        return Decimal(text)
+    value = unicodedata.normalize('NFKC', str(text))   # full-width digits and ￦ → plain
+    for mark in _IGNORED:
+        value = value.replace(mark, '')
+    return Decimal(value) if _NUMBER.fullmatch(value) else None
+
+
+def whole_won(amount):
+    """An amount as plain whole won, e.g. Decimal('99.9') → '100'."""
+    return str(amount.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
 # ─── Recalculation control ───────────────────────────────────
@@ -144,7 +173,8 @@ class Invoice(models.Model):
         self.seller_fax = profile.fax or ''
 
     def calculate_total_amount(self):
-        return sum(item.amount for item in self.invoiceitem_set.all())
+        """The items' amounts that are numbers; an amount written as text ('별도') adds nothing."""
+        return sum((item.amount_value for item in self.invoiceitem_set.all()), Decimal('0'))
 
     def calculate_current_balance(self):
         """What this invoice alone still has owing. Nothing is carried in."""
@@ -156,17 +186,42 @@ class Invoice(models.Model):
 
 
 class InvoiceItem(models.Model):
+    """One line of an invoice. 수량, 박스, 단가 and 금액 are text, kept exactly as typed.
+
+    When quantity, boxes and unit price are all numbers, the amount is their product (in
+    whole won), whatever was typed there. Otherwise the amount is whatever was typed — a
+    number counts towards the invoice total, text ('별도') does not.
+    """
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
     product_name = models.CharField(max_length=100)
-    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    boxes = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    unit_price = models.DecimalField(max_digits=12, decimal_places=0, default=0)
-    amount = models.DecimalField(max_digits=14, decimal_places=0, default=0)
+    quantity = models.CharField(max_length=50, blank=True, default='')
+    boxes = models.CharField(max_length=50, blank=True, default='')
+    unit_price = models.CharField(max_length=50, blank=True, default='')
+    amount = models.CharField(max_length=50, blank=True, default='')
     order = models.PositiveIntegerField(default=0)
 
+    CELLS = ('quantity', 'boxes', 'unit_price', 'amount')
+
+    def computed_amount(self):
+        """quantity × boxes × unit_price when all three are numbers, else None."""
+        numbers = [number_in(getattr(self, field)) for field in ('quantity', 'boxes', 'unit_price')]
+        if None in numbers:
+            return None
+        quantity, boxes, unit_price = numbers
+        return quantity * boxes * unit_price
+
+    @property
+    def amount_value(self):
+        """What this line adds to the invoice total."""
+        return number_in(self.amount) or Decimal('0')
+
     def save(self, *args, **kwargs):
-        # amount = quantity × boxes × unit_price
-        self.amount = self.quantity * self.boxes * self.unit_price
+        for field in self.CELLS:
+            value = getattr(self, field)
+            setattr(self, field, '' if value is None else str(value).strip()[:50])
+        computed = self.computed_amount()
+        if computed is not None:
+            self.amount = whole_won(computed)
         super().save(*args, **kwargs)
 
     def __str__(self):
