@@ -72,6 +72,9 @@ TEMPLATES = [
 WSGI_APPLICATION = 'inv.wsgi.application'
 
 # ── Database ─────────────────────────────────────────────────────────────────
+# Where `manage.py backup_db` writes database copies (before every deploy and nightly).
+BACKUP_DIR = Path(os.environ.get('DJANGO_BACKUP_DIR', BASE_DIR / 'backups'))
+
 DATABASES = {
     'default': dj_database_url.config(
         default=f'sqlite:///{BASE_DIR}/db.sqlite3',

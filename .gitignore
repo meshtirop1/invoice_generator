@@ -16,9 +16,13 @@ staticfiles/
 media/
 local_settings.py
 
-# Environment
+# Environment (the server's settings file is called plain `env`)
 .env
 .env.*
+/env
+
+# Database copies made by manage.py backup_db
+backups/
 
 # Build artifacts
 dist/
