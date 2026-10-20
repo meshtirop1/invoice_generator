@@ -271,31 +271,57 @@ python manage.py test invoice --verbosity=2
 
 ## Deploying to the VPS
 
-The server runs gunicorn behind nginx. Deploying is a pull, a migrate, a
-collectstatic and a restart:
+The site runs from `/home/deploy/sites/invoice` on the shared VPS: gunicorn as the
+`invoice` systemd service on `127.0.0.1:8109`, behind nginx for `inv.mtirop.com`.
+
+**Every push to `main` deploys automatically** (`.github/workflows/deploy.yml`): the tests
+run first, then the workflow SSHes in as the `deploy` user, resets the checkout to
+`origin/main` and runs [`deploy/deploy.sh`](deploy/deploy.sh), which installs requirements,
+**backs up the database**, migrates, collects static files and restarts the service. A
+failed backup stops the deploy. The workflow then checks that the site answers. It can also
+be started by hand from the Actions tab (*Deploy → Run workflow*).
+
+The workflow needs three secrets in the repo's `production` environment: `SSH_HOST`,
+`SSH_USER` (`deploy`) and `SSH_KEY` (a key in `/home/deploy/.ssh/authorized_keys`). The server
+pulls with a read-only deploy key (SSH alias `github-invoice` in `/home/deploy/.ssh/config`),
+and `deploy` may run only `systemctl restart|is-active invoice` through sudo.
+
+To deploy by hand, on the server as `deploy`:
 
 ```bash
-cd /path/to/invoice_generator
-git pull origin main
-source .venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate --noinput
-python manage.py collectstatic --noinput
-sudo systemctl restart invoice        # whatever the gunicorn unit is called
+cd /home/deploy/sites/invoice
+git fetch origin main && git reset --hard origin/main
+bash deploy/deploy.sh
 ```
 
-`startup.sh` does the same sequence for a container start.
+The reset leaves untracked files alone: `env` (settings and secrets), `db.sqlite3`,
+`backups/`, `staticfiles/` and `.venv/`. `startup.sh` is for a container start.
+
+### Backups
+
+`python manage.py backup_db` takes a consistent copy of the SQLite database, checks it with
+`PRAGMA integrity_check` and gzips it into `backups/` (folder `700`, files `600`). Copies
+older than 14 days are deleted, but the newest 5 always stay. It runs before every deploy
+(`predeploy`) and every night at 03:05 Korea time through
+[`deploy/cron.d/invoice-backup`](deploy/cron.d/invoice-backup), installed as
+`/etc/cron.d/invoice-backup`. The nightly run logs to `backups/backup.log`. How to restore a
+copy is written at the top of [`deploy/backup.sh`](deploy/backup.sh).
 
 ### Required environment
 
 Set these for the service (systemd `Environment=`, an `.env`, or the container):
 
 ```bash
+DJANGO_SETTINGS_MODULE=inv.prod_settings   # turns on the password gate
 SECRET_KEY='<a long random string>'
 DEBUG=False
 ALLOWED_HOSTS=inv.mtirop.com
+GATE_PASSWORD='<the code staff type to get in>'
 DATABASE_URL=postgres://user:pass@localhost:5432/invoice   # omit for SQLite
 ```
+
+On the server these live in `/home/deploy/sites/invoice/env`, which the systemd unit reads
+(`EnvironmentFile=`) and which is never committed.
 
 `CSRF_TRUSTED_ORIGINS` is derived from `ALLOWED_HOSTS` automatically
 (`https://<host>` for each real host), so a form post over HTTPS works without
@@ -351,6 +377,9 @@ user.
 | `SECURE_HSTS_SECONDS` | No | `0` | Enable HSTS (e.g. `31536000`) |
 | `DJANGO_SUPERUSER_USERNAME` | No | — | Used by `create_default_superuser` |
 | `DJANGO_SUPERUSER_PASSWORD` | No | — | Used by `create_default_superuser` |
+| `DJANGO_SETTINGS_MODULE` | Live site | `inv.settings` | `inv.prod_settings` adds the password gate |
+| `GATE_PASSWORD` | With the gate | — | The gate's password. No fallback: unset keeps the gate shut |
+| `DJANGO_BACKUP_DIR` | No | `backups/` | Where `backup_db` writes copies |
 
 ---
 
@@ -360,20 +389,19 @@ There is no default superuser and no built-in password. Create one with
 `python manage.py createsuperuser`, or set `DJANGO_SUPERUSER_USERNAME` /
 `DJANGO_SUPERUSER_PASSWORD` and run `python manage.py create_default_superuser`.
 
-> ⚠️ **The app itself has no authentication.** Every view — including creating,
-> editing and deleting invoices — is reachable by anyone who knows the URL.
-> `/admin` is protected, the rest of the site is not. Put HTTP basic auth in
-> nginx in front of it, or add `login_required`, before treating the deployment
-> as private.
+> The app has no user accounts of its own. On the live site every page except `/admin/`
+> sits behind a single shared password (`inv/gate.py`, switched on by
+> `inv/prod_settings.py` and set with `GATE_PASSWORD`); once typed it lasts 30 days on that
+> device. Running with plain `inv.settings` (local development) has no gate.
 
 ## CI
 
 Every push to any branch:
-1. GitHub Actions runs all 69 tests
+1. GitHub Actions runs all the tests
 2. Checks for missing migrations
 3. Builds the Docker image to verify it compiles
 
-Deployment is manual — see **Deploying to the VPS** above.
+A push to `main` then deploys — see **Deploying to the VPS** above.
 
 ---
 

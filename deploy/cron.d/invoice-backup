@@ -1,0 +1,6 @@
+# Nightly inv database backup at 03:05 Korea time (18:05 UTC - the server runs on UTC).
+# Installed (by root) as /etc/cron.d/invoice-backup; it runs deploy/backup.sh as the deploy user.
+# The -x test makes it a no-op until backup.sh is on the server.
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+5 18 * * * deploy [ -x /home/deploy/sites/invoice/deploy/backup.sh ] && /home/deploy/sites/invoice/deploy/backup.sh nightly
