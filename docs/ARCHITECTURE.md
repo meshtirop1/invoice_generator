@@ -39,9 +39,15 @@ public/vendor/           html-to-image, qrcode.js (vendored, no CDN)
 Each invoice stands alone:
 
 ```
-current_balance = Σ(qty × boxes × unit_price)
+current_balance = Σ(item amounts that are numbers)
                 + delivery_fee − deduction − payment_received
 ```
+
+An item's amount is `qty × boxes × unit_price` when those three cells are all numbers.
+The four cells (수량 / 박스 / 단가 / 금액) are text, kept exactly as typed — `10kg`,
+`3박스`, `시가` are fine — so when any of the three is text the amount is typed by hand,
+and only an amount that reads as a number (`120,000`, `₩120,000`, `120000원`) is added up.
+An amount like `별도` prints as typed and adds nothing.
 
 Nothing carries between invoices.
 
@@ -164,13 +170,15 @@ matching the paper convention.
 (`views.py:184`) → `_persist_invoice` (`views.py:78`).
 
 Parsing is defensive because the payload is four **parallel arrays**
-(`product_name[]`, `quantity[]`, `boxes[]`, `unit_price[]`):
+(`product_name[]`, `quantity[]`, `boxes[]`, `unit_price[]`, `amount[]`):
 
 - `_at(values, i)` returns `''` past the end. The original `quantities[i]` raised
   `IndexError` on a ragged POST — *after* the invoice row was already committed.
-- `to_decimal` for qty/boxes (the model is `DecimalField(decimal_places=2)`; the
-  old `int()` turned `"2.5"` into `0`), `to_int` for money
-  (`decimal_places=0`).
+- The four item cells are kept as typed (`_cell`, up to 50 characters): they are text
+  columns, so `10kg` or `시가` is stored, not turned into `0`. `InvoiceItem.save` works
+  out the amount when quantity, boxes and price are all numbers (`number_in`), otherwise
+  keeps the typed amount. `to_int` is still used for the money fields under the table
+  (배송비, 공제, 입금).
 - `_lookup` coerces the pk itself — `Buyer.objects.filter(pk='')` raises
   `ValueError`, it does not return empty.
 

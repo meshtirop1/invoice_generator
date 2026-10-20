@@ -30,15 +30,6 @@ def to_int(value, default=0):
         return default
 
 
-def to_decimal(value, default=Decimal('0')):
-    """POST string → Decimal, keeping fractional quantities like '2.5'."""
-    try:
-        text = str(value).replace(',', '').strip()
-        return Decimal(text) if text else default
-    except (InvalidOperation, ValueError, TypeError):
-        return default
-
-
 def _lookup(model, raw_pk):
     """Fetch by pk from raw POST input; a blank or junk id is simply 'not found'."""
     try:
@@ -52,12 +43,22 @@ def _at(values, index, default=''):
     return values[index] if index < len(values) else default
 
 
+def _cell(values, index):
+    """An item cell as typed — text such as '10kg' or '시가' is kept, not turned into 0."""
+    return str(_at(values, index)).strip()[:50]
+
+
 def _parse_items(request):
-    """Build item dicts from the parallel product_name[]/quantity[]/... lists."""
+    """Build item dicts from the parallel product_name[]/quantity[]/... lists.
+
+    수량 / 박스 / 단가 / 금액 are kept as typed. The amount is worked out when the other three
+    are numbers (InvoiceItem.save); otherwise the typed amount is kept.
+    """
     names = request.POST.getlist('product_name[]')
     quantities = request.POST.getlist('quantity[]')
     boxes_list = request.POST.getlist('boxes[]')
     unit_prices = request.POST.getlist('unit_price[]')
+    amounts = request.POST.getlist('amount[]')
 
     rows = []
     for i, raw_name in enumerate(names):
@@ -66,9 +67,10 @@ def _parse_items(request):
             continue
         rows.append({
             'product_name': name[:100],
-            'quantity': to_decimal(_at(quantities, i)),
-            'boxes': to_decimal(_at(boxes_list, i)),
-            'unit_price': to_int(_at(unit_prices, i)),
+            'quantity': _cell(quantities, i),
+            'boxes': _cell(boxes_list, i),
+            'unit_price': _cell(unit_prices, i),
+            'amount': _cell(amounts, i),
             'order': len(rows),
         })
     return rows

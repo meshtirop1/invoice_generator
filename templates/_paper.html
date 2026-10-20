@@ -1,4 +1,4 @@
-{% load humanize %}{% comment %}
+{% load humanize invoice_cells %}{% comment %}
 Read-only rendering of the invoice paper. Used by the print page and by the
 phone share page (which turns it into the PNG).
 Expects: invoice, items, empty_rows.
@@ -36,10 +36,10 @@ Expects: invoice, items, empty_rows.
       {% for item in items %}
       <tr>
         <td>{{ item.product_name }}</td>
-        <td>{{ item.quantity|floatformat:"-2"|intcomma }}</td>
-        <td>{{ item.boxes|floatformat:"-2"|intcomma }}</td>
-        <td>{{ item.unit_price|floatformat:0|intcomma }}</td>
-        <td>{{ item.amount|floatformat:0|intcomma }}</td>
+        <td>{{ item.quantity|cell }}</td>
+        <td>{{ item.boxes|cell }}</td>
+        <td>{{ item.unit_price|cell }}</td>
+        <td>{{ item.amount|cell }}</td>
       </tr>
       {% endfor %}
       {% for _ in empty_rows %}

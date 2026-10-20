@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load humanize %}
+{% load humanize invoice_cells %}
 {% block title %}계산서 상세{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -34,10 +34,10 @@
       {% for item in items %}
       <tr>
         <td>{{ item.product_name }}</td>
-        <td style="text-align:right;">{{ item.quantity|floatformat:"-2"|intcomma }}</td>
-        <td style="text-align:right;">{{ item.boxes|floatformat:"-2"|intcomma }}</td>
-        <td style="text-align:right;">{{ item.unit_price|floatformat:0|intcomma }}</td>
-        <td style="text-align:right;font-weight:600;">{{ item.amount|floatformat:0|intcomma }}</td>
+        <td style="text-align:right;">{{ item.quantity|cell }}</td>
+        <td style="text-align:right;">{{ item.boxes|cell }}</td>
+        <td style="text-align:right;">{{ item.unit_price|cell }}</td>
+        <td style="text-align:right;font-weight:600;">{{ item.amount|cell }}</td>
       </tr>
       {% endfor %}
     </tbody>
