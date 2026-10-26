@@ -36,10 +36,11 @@ public/vendor/           html-to-image, qrcode.js (vendored, no CDN)
 
 ## 1. Balances — invoices are independent
 
-Each invoice stands alone:
+Invoices do not automatically carry balances forward. A user can enter an optional
+manual previous balance on each invoice:
 
 ```
-current_balance = Σ(item amounts that are numbers)
+current_balance = previous_balance + Σ(item amounts that are numbers)
                 + delivery_fee − deduction − payment_received
 ```
 
@@ -49,7 +50,8 @@ The four cells (수량 / 박스 / 단가 / 금액) are text, kept exactly as typ
 and only an amount that reads as a number (`120,000`, `₩120,000`, `120000원`) is added up.
 An amount like `별도` prints as typed and adds nothing.
 
-Nothing carries between invoices.
+The previous balance is stored per invoice; it is never calculated from another
+invoice. Recalculation preserves this manually entered amount.
 
 ### History, because the code still carries its shape
 
@@ -58,14 +60,15 @@ The app originally ran a **running tab**: `Invoice.save()` snapshotted
 what was still owed. That was deliberate — wholesale shops pay on credit, and
 the paper form has a 전 잔 액 row for exactly this.
 
-It was dropped on request: the owner wanted every invoice to read as its own
-sale, and the carry-forward made each new invoice look inflated.
+Automatic carry-forward was dropped on request: the owner wanted each invoice to
+read as its own sale, and the carry-forward made each new invoice look inflated.
+The paper still has a previous-balance row, so users can enter an amount there
+when they need to record it manually.
 
 Two artefacts of that history remain, both on purpose:
 
-- **`previous_balance` is still a column**, always written as `0`. Keeping it
-  means the decision reverses without a migration, and the 전 잔 액 row renders
-  blank while it is zero, which is what the reference form looks like anyway.
+- **`previous_balance` is still a column** and is editable on the invoice sheet.
+  It is preserved when item changes recalculate the current balance.
 - **`recalculate_balances(buyer)`** still walks every invoice for a buyer rather
   than just the one that changed. It no longer carries a running total, but an
   invoice's own figure still has to be recomputed whenever its items change, and
@@ -91,8 +94,7 @@ Django's `ModelAdmin` saves the `Invoice` row **first**, then inline
 `InvoiceItem`s. The old `save()` forced `current_balance = 0` on create and
 nothing ran afterwards — so **every invoice created through `/admin` was
 permanently zero**. The signal fixes it generically; `InvoiceAdmin.save_related()`
-also calls it explicitly, and the balance fields are `readonly_fields`, since
-typing into them would be a lie.
+also calls it explicitly. The derived `current_balance` remains read-only in admin.
 
 `_item_changed` guards `Invoice.DoesNotExist` — during a cascading invoice
 delete, the item's parent row may already be gone.

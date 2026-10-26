@@ -64,12 +64,7 @@ def _recalc_enabled():
 
 def recalculate_balances(buyer):
     """
-    Recompute current_balance for every invoice of a buyer.
-
-    Invoices are INDEPENDENT: each one stands alone and nothing carries forward
-    between them, so previous_balance is always zero. (It is kept as a column so
-    the decision stays reversible without a migration; the 전잔액 row on the
-    paper renders blank while it is zero, which matches the reference form.)
+    Recompute current balances while preserving each invoice's manual previous balance.
 
     Still needed because an invoice's own total changes whenever its items do.
     Uses bulk_update, which does not emit signals, so it cannot recurse.
@@ -85,13 +80,10 @@ def recalculate_balances(buyer):
     )
 
     for invoice in invoices:
-        invoice.previous_balance = 0
         invoice.current_balance = invoice.calculate_current_balance()
 
     if invoices:
-        Invoice.objects.bulk_update(
-            invoices, ['previous_balance', 'current_balance']
-        )
+        Invoice.objects.bulk_update(invoices, ['current_balance'])
     return len(invoices)
 
 
@@ -177,9 +169,12 @@ class Invoice(models.Model):
         return sum((item.amount_value for item in self.invoiceitem_set.all()), Decimal('0'))
 
     def calculate_current_balance(self):
-        """What this invoice alone still has owing. Nothing is carried in."""
+        """What this invoice still has owing, including its manual previous balance."""
         total = self.calculate_total_amount()
-        return total + self.delivery_fee - self.deduction - self.payment_received
+        return (
+            self.previous_balance + total + self.delivery_fee
+            - self.deduction - self.payment_received
+        )
 
     class Meta:
         ordering = ['-date', '-created_at']

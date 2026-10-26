@@ -148,10 +148,11 @@ reads the snapshot fields.
 
 ### Balances
 
-Invoices are **independent**. Each one shows only its own amount:
+Invoices do not automatically carry balances forward. The previous balance is
+editable on each sheet, and the current balance includes the amount entered:
 
 ```
-current_balance = Σ(item amounts that are numbers)
+current_balance = previous_balance + Σ(item amounts that are numbers)
                 + delivery_fee − deduction − payment_received
 ```
 
@@ -161,10 +162,9 @@ The four cells (수량 / 박스 / 단가 / 금액) are text, kept exactly as typ
 and only an amount that reads as a number (`120,000`, `₩120,000`, `120000원`) is added up.
 An amount like `별도` prints as typed and adds nothing.
 
-Nothing carries between invoices. `previous_balance` is kept as a column but is
-always `0`, so the 전 잔 액 row on the paper renders blank — which matches the
-reference form. Keeping the column means the decision can be reversed without a
-migration.
+No previous balance is calculated from another invoice. Enter it manually in the
+전 잔 액 row when needed; it is saved with that invoice and included in its
+현 잔 액. Leave it blank to use zero.
 
 `recalculate_balances(buyer)` still exists and still runs on every invoice/item
 save and delete, including from the Django admin, because an invoice's own total

@@ -307,7 +307,9 @@ body.exporting .f { background: transparent !important; box-shadow: none !import
       <tr>
         <td></td><td></td><td></td>
         <td class="sum-label">전 잔 액</td>
-        <td class="sum-value" id="prevBalanceCell"></td>
+        <td class="sum-value"><input type="text" inputmode="numeric" name="previous_balance"
+               id="previous_balance" class="f money"
+               value="{{ invoice.previous_balance|default:0|floatformat:0 }}"></td>
       </tr>
       <tr class="total-row">
         <td></td><td></td><td></td>
@@ -352,7 +354,6 @@ body.exporting .f { background: transparent !important; box-shadow: none !import
   var invoicePk = {% if is_saved %}{{ invoice.pk }}{% else %}null{% endif %};
   var shareUrl  = {% if is_saved %}'{{ request.scheme }}://{{ request.get_host }}{% url "invoice_share" invoice.pk %}'{% else %}null{% endif %};
   var buyerSelect = document.getElementById('buyerSelect');
-  var prevBalance = Number('{{ previous_balance|floatformat:0 }}') || 0;
   var dirty = false;
 
   function parseNum(v) {
@@ -414,9 +415,8 @@ body.exporting .f { background: transparent !important; box-shadow: none !import
       + parseNum(document.getElementById('delivery_fee').value)
       - parseNum(document.getElementById('deduction').value)
       - parseNum(document.getElementById('payment_received').value)
-      + prevBalance;
+      + parseNum(document.getElementById('previous_balance').value);
 
-    document.getElementById('prevBalanceCell').textContent = prevBalance ? fmt(prevBalance) : '';
     document.getElementById('currentBalanceCell').textContent = fmt(current);
   }
 
@@ -490,7 +490,7 @@ body.exporting .f { background: transparent !important; box-shadow: none !import
     addRow().querySelector('.cell').focus();
   });
 
-  ['delivery_fee', 'deduction', 'payment_received'].forEach(function (id) {
+  ['delivery_fee', 'deduction', 'payment_received', 'previous_balance'].forEach(function (id) {
     var el = document.getElementById(id);
     el.addEventListener('input', function () { markDirty(); recalc(); });
     wireMoney(el);
@@ -513,12 +513,7 @@ body.exporting .f { background: transparent !important; box-shadow: none !import
   buyerSelect.addEventListener('change', function () {
     markDirty();
     applyBuyerFlags(this.options[this.selectedIndex]);
-    if (!this.value) { prevBalance = 0; recalc(); return; }
-    var url = '/api/buyer/' + this.value + '/balance/';
-    if (invoicePk) url += '?exclude=' + invoicePk;
-    fetch(url).then(function (r) { return r.json(); })
-      .then(function (d) { prevBalance = d.previous_balance || 0; recalc(); })
-      .catch(function () { /* offline — keep what is on screen */ });
+    recalc();
   });
 
   document.getElementById('dateField').addEventListener('change', function () {
