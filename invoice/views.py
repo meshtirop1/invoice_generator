@@ -95,6 +95,7 @@ def _persist_invoice(invoice, seller, buyer, date, fees, rows, seller_details):
         invoice.delivery_fee = fees['delivery_fee']
         invoice.deduction = fees['deduction']
         invoice.payment_received = fees['payment_received']
+        invoice.previous_balance = fees['previous_balance']
         for field, value in seller_details.items():
             setattr(invoice, field, value)
         invoice.save()
@@ -133,14 +134,12 @@ def _render_sheet(request, invoice=None):
         selected_buyer = invoice.buyer
         selected_seller = invoice.seller
         date_value = invoice.date
-        previous_balance = 0   # invoices are independent; nothing carries in
     else:
         items = []
         preset = request.GET.get('buyer')
         selected_buyer = next((b for b in buyers if str(b.pk) == str(preset)), None)
         selected_seller = default_seller
         date_value = timezone.localdate()
-        previous_balance = 0   # invoices are independent; nothing carries in
         # A blank sheet starts from the default profile, then is freely typed over.
         invoice = Invoice()
         invoice.fill_seller_from_profile(default_seller)
@@ -156,7 +155,6 @@ def _render_sheet(request, invoice=None):
         'selected_buyer': selected_buyer,
         'selected_seller': selected_seller,
         'date_value': date_value,
-        'previous_balance': previous_balance,
     }
     return render(request, 'invoice_sheet.html', context)
 
@@ -205,6 +203,7 @@ def _handle_sheet_post(request, invoice=None):
         'delivery_fee': to_int(request.POST.get('delivery_fee')),
         'deduction': to_int(request.POST.get('deduction')),
         'payment_received': to_int(request.POST.get('payment_received')),
+        'previous_balance': to_int(request.POST.get('previous_balance')),
     }
     rows = _parse_items(request)
 
@@ -373,8 +372,8 @@ def buyer_balance(request, pk):
     """
     Per-buyer settings the sheet needs when the buyer changes.
 
-    previous_balance is always 0 — invoices are independent — but the key is
-    kept so the sheet's existing fetch keeps working unchanged.
+    Previous balances are entered manually per invoice and are not inferred from
+    a buyer's other invoices; the zero key is retained for API compatibility.
     """
     buyer = get_object_or_404(Buyer, pk=pk)
     return JsonResponse({

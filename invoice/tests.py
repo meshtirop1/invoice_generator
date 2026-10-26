@@ -171,35 +171,27 @@ class InvoiceModelTest(TestCase):
         self.assertEqual(inv.calculate_total_amount(), Decimal('16000'))
 
     def test_calculate_current_balance(self):
-        # An earlier invoice must not influence this one.
-        make_invoice(
-            self.seller, self.buyer,
-            items=[{'name': '첫번째', 'qty': 1, 'boxes': 1, 'price': 3000}],
-        )
         inv = make_invoice(
             self.seller, self.buyer,
             items=[{'name': '감', 'qty': 4, 'boxes': 2, 'price': 500}],  # 4000
             delivery_fee=1000,
             deduction=500,
             payment_received=2000,
+            previous_balance=750,
         )
-        # 4000 + 1000 - 500 - 2000 = 2500, with nothing carried in.
-        self.assertEqual(inv.calculate_current_balance(), Decimal('2500'))
+        # 750 + 4000 + 1000 - 500 - 2000 = 3250.
+        self.assertEqual(inv.calculate_current_balance(), Decimal('3250'))
 
-    def test_nothing_carries_over_from_the_previous_invoice(self):
-        make_invoice(
+    def test_manual_previous_balance_is_preserved_when_recalculated(self):
+        inv = make_invoice(
             self.seller, self.buyer,
             items=[{'name': '사과', 'qty': 10, 'boxes': 1, 'price': 1000}],
+            previous_balance=5000,
         )
-        inv2 = Invoice(
-            seller=self.seller,
-            buyer=self.buyer,
-            date=datetime.date(2026, 6, 2),
-        )
-        inv2.save()
-        inv2.refresh_from_db()
-        self.assertEqual(inv2.previous_balance, Decimal('0'))
-        self.assertEqual(inv2.current_balance, Decimal('0'))
+        inv.invoiceitem_set.first().save()
+        inv.refresh_from_db()
+        self.assertEqual(inv.previous_balance, Decimal('5000'))
+        self.assertEqual(inv.current_balance, Decimal('15000'))
 
     def test_ordering_newest_first(self):
         inv1 = make_invoice(self.seller, self.buyer, date=datetime.date(2026, 1, 1))
@@ -414,7 +406,7 @@ class AjaxViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['previous_balance'], 0)
 
-    def test_buyer_balance_is_always_zero(self):
+    def test_buyer_balance_is_not_automatically_carried_forward(self):
         seller = make_seller()
         buyer = make_buyer()
         make_invoice(
@@ -558,6 +550,7 @@ class InvoiceSheetTest(TestCase):
         response = self.client.get(reverse('invoice_new'))
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'invoice_sheet.html')
+        self.assertContains(response, 'name="previous_balance"')
 
     def test_edit_sheet_renders_with_values(self):
         inv = make_invoice(
@@ -620,6 +613,27 @@ class InvoiceSheetTest(TestCase):
         item = inv.invoiceitem_set.get()
         self.assertEqual(item.unit_price, '2,000')          # kept as typed
         self.assertEqual(item.amount, '12000')              # 2 × 3 × 2,000
+
+    def test_manual_previous_balance_is_saved_and_included_in_current_balance(self):
+        self.client.post(reverse('invoice_new'), self._payload(
+            previous_balance='12,500',
+        ))
+        inv = Invoice.objects.get()
+        self.assertEqual(inv.previous_balance, Decimal('12500'))
+        self.assertEqual(inv.current_balance, Decimal('18500'))
+
+    def test_manual_previous_balance_is_preserved_when_editing(self):
+        inv = make_invoice(self.seller, self.buyer, previous_balance=Decimal('2500'))
+        page = self.client.get(reverse('invoice_edit', kwargs={'pk': inv.pk}))
+        self.assertContains(page, 'name="previous_balance"')
+        self.assertContains(page, 'value="2500"')
+        self.client.post(
+            reverse('invoice_edit', kwargs={'pk': inv.pk}),
+            self._payload(previous_balance='2,500'),
+        )
+        inv.refresh_from_db()
+        self.assertEqual(inv.previous_balance, Decimal('2500'))
+        self.assertEqual(inv.current_balance, Decimal('8500'))
 
 
 # ─── Print / share output ─────────────────────────────────────────────────────
@@ -769,4 +783,3 @@ class ItemTextCellsTest(TestCase):
         item = inv.invoiceitem_set.get()
         self.assertEqual((item.quantity, item.boxes, item.unit_price, item.amount),
                          ('10', '2.5', '5000', '시가'))
-
